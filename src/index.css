@@ -1,0 +1,52 @@
+@import "tailwindcss";
+
+@theme {
+  --color-navy: #0A0F2C;
+  --color-navy-light: #1A1F3C;
+  --color-gold: #D4AF37;
+  --color-gold-light: #F1C40F;
+  --color-gold-dark: #B8860B;
+  --color-silver: #C0C0C0;
+  
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+@layer base {
+  body {
+    @apply bg-slate-50 text-navy antialiased;
+  }
+}
+
+@layer components {
+  .btn-navy {
+    @apply bg-navy hover:bg-navy-light text-white px-6 py-2.5 rounded-lg transition-all duration-300 shadow-md hover:shadow-lg active:scale-95 font-medium border border-white/10;
+  }
+  
+  .btn-gold {
+    @apply bg-gradient-to-r from-gold-dark to-gold hover:from-gold hover:to-gold-light text-navy px-6 py-2.5 rounded-lg transition-all duration-300 shadow-md hover:shadow-lg active:scale-95 font-bold border border-gold/20;
+  }
+  
+  .input-field {
+    @apply w-full px-4 py-2.5 rounded-lg border border-slate-200 focus:border-gold focus:ring-2 focus:ring-gold/20 outline-none transition-all duration-200 bg-white text-navy;
+  }
+  
+  .card {
+    @apply bg-white rounded-xl shadow-sm border border-slate-200 p-6 hover:shadow-md transition-shadow duration-300;
+  }
+
+  .nav-gradient {
+    @apply bg-gradient-to-r from-navy via-navy-light to-gold-dark;
+  }
+
+  .gold-gradient-text {
+    @apply text-transparent bg-clip-text bg-gradient-to-r from-gold via-gold-light to-gold-dark;
+  }
+
+  .navy-gold-gradient {
+    @apply bg-gradient-to-br from-navy via-navy-light to-gold-dark;
+  }
+
+  .card-gradient {
+    @apply bg-white hover:bg-gradient-to-br hover:from-white hover:to-gold/5 transition-all duration-500;
+  }
+}
