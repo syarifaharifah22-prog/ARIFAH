@@ -31,14 +31,15 @@ import {
   Mail,
   FileText,
   CheckCircle2,
-  MousePointer2
+  MousePointer2,
+  Key
 } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
 import { supabase } from './lib/supabase';
 import { cn, formatDate } from './lib/utils';
 import type { Surat, SuratInsert } from './types';
 import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { 
   BarChart, 
@@ -53,7 +54,14 @@ import {
   Pie,
   Legend
 } from 'recharts';
-import { format, subDays, isWithinInterval, parseISO } from 'date-fns';
+import { format, subDays, isWithinInterval, parseISO, getYear, startOfYear, endOfYear } from 'date-fns';
+
+const formatFullNomor = (kode: string, nomor: number | string) => {
+  const formattedNomor = String(nomor).padStart(2, '0');
+  // Jika kode diakhiri titik, hapus titiknya lalu tambah strip
+  const cleanKode = kode.endsWith('.') ? kode.slice(0, -1) : kode;
+  return `${cleanKode}-${formattedNomor}`;
+};
 
 // --- Components ---
 
@@ -74,9 +82,9 @@ const Navbar = ({ activeTab, setActiveTab }: { activeTab: string, setActiveTab: 
             <motion.div 
               whileHover={{ rotate: 360 }}
               transition={{ duration: 0.5 }}
-              className="bg-white p-1.5 rounded-lg shadow-gold/20 shadow-lg"
+              className="bg-white p-1.5 rounded-lg shadow-gold/20 shadow-lg flex items-center justify-center w-10 h-10 md:w-12 md:h-12"
             >
-              <ShieldCheck className="w-6 h-6 md:w-7 md:h-7 text-navy" />
+              <Mail className="w-6 h-6 md:w-7 md:h-7 text-navy" />
             </motion.div>
             <div className="flex flex-col">
               <span className="font-black text-sm md:text-xl tracking-tighter leading-none">SIPENSUS</span>
@@ -151,7 +159,76 @@ const Navbar = ({ activeTab, setActiveTab }: { activeTab: string, setActiveTab: 
   );
 };
 
-const Hero = ({ onAction }: { onAction: () => void }) => (
+const generateGuidePDF = () => {
+  const doc = new jsPDF();
+  
+  // Header
+  doc.setFillColor(10, 15, 44);
+  doc.rect(0, 0, 210, 40, 'F');
+  
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(22);
+  doc.setFont('helvetica', 'bold');
+  doc.text('PANDUAN PENGGUNAAN SIPENSUS', 105, 25, { align: 'center' });
+  
+  doc.setTextColor(212, 175, 55);
+  doc.setFontSize(12);
+  doc.text('Rutan Kelas IIB Sabang', 105, 33, { align: 'center' });
+
+  // Content
+  doc.setTextColor(44, 62, 80);
+  doc.setFontSize(14);
+  doc.setFont('helvetica', 'bold');
+  doc.text('1. PENDAHULUAN', 20, 55);
+  
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(11);
+  const intro = 'SIPENSUS (Sistem Pengambilan Nomor Surat Khusus) adalah aplikasi digital untuk mempermudah pengambilan nomor surat secara otomatis dan terintegrasi di Rutan Sabang.';
+  doc.text(doc.splitTextToSize(intro, 170), 20, 62);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.text('2. LANGKAH PENGAMBILAN NOMOR', 20, 80);
+  
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(11);
+  const steps = [
+    'Buka menu "AMBIL NOMOR" pada navigasi atas atau klik tombol di beranda.',
+    'Pilih "Kode Surat" sesuai dengan jenis surat yang akan dibuat.',
+    'Isi "Perihal Surat" dengan ringkasan isi surat.',
+    'Isi "Tujuan Surat" (Instansi atau perorangan yang dituju).',
+    'Isi "Pemohon/Keterangan" (Nama bagian atau petugas yang meminta).',
+    'Klik tombol "SIMPAN & TERBITKAN NOMOR".',
+    'Nomor surat akan muncul otomatis. Klik ikon salin untuk menyalin nomor.'
+  ];
+  
+  let y = 87;
+  steps.forEach((step, i) => {
+    doc.text(`${i + 1}. ${step}`, 25, y);
+    y += 8;
+  });
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.text('3. RIWAYAT & STATISTIK', 20, 150);
+  
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(11);
+  const history = 'Anda dapat melihat semua riwayat nomor surat yang telah diterbitkan pada menu "RIWAYAT & STATISTIK". Di sana Anda juga dapat melakukan pencarian, filter tanggal, dan ekspor data ke format PDF atau Excel.';
+  doc.text(doc.splitTextToSize(history, 170), 20, 157);
+
+  // Footer
+  doc.setDrawColor(212, 175, 55);
+  doc.line(20, 270, 190, 270);
+  doc.setFontSize(9);
+  doc.setTextColor(150);
+  doc.text('SIPENSUS Sabang - Inovasi Digital Pemasyarakatan', 105, 277, { align: 'center' });
+
+  doc.save('Panduan_SIPENSUS_Sabang.pdf');
+  toast.success('Panduan PDF berhasil diunduh');
+};
+
+const Hero = ({ onAction, onDownloadGuide }: { onAction: () => void, onDownloadGuide: () => void }) => (
   <section className="relative min-h-[90vh] flex items-center justify-center overflow-hidden py-20">
     {/* Animated Background Elements */}
     <div className="absolute inset-0 z-0 bg-slate-50">
@@ -169,15 +246,25 @@ const Hero = ({ onAction }: { onAction: () => void }) => (
         transition={{ duration: 0.8 }}
         className="text-left"
       >
-        <motion.div 
-          initial={{ scale: 0.8, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ delay: 0.2 }}
-          className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-navy/5 border border-navy/10 text-navy text-xs font-black mb-6 uppercase tracking-widest"
-        >
-          <Sparkles className="w-4 h-4 text-gold" />
-          Inovasi Digital Pemasyarakatan
-        </motion.div>
+        <div className="flex items-center gap-4 mb-6">
+          <motion.div
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            transition={{ type: "spring", stiffness: 260, damping: 20 }}
+            className="w-16 h-16 md:w-20 md:h-20 bg-white p-2 rounded-2xl shadow-xl flex items-center justify-center border-2 border-gold/20"
+          >
+            <Key className="w-10 h-10 md:w-12 md:h-12 text-navy" />
+          </motion.div>
+          <motion.div 
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ delay: 0.2 }}
+            className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-navy/5 border border-navy/10 text-navy text-xs font-black uppercase tracking-widest"
+          >
+            <Sparkles className="w-4 h-4 text-gold" />
+            Inovasi Digital Pemasyarakatan
+          </motion.div>
+        </div>
         
         <h1 className="text-5xl md:text-7xl font-black text-navy mb-6 leading-[0.9] tracking-tighter">
           SIPENSUS <br />
@@ -196,6 +283,14 @@ const Hero = ({ onAction }: { onAction: () => void }) => (
             AMBIL NOMOR SEKARANG
             <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
           </button>
+          
+          <button 
+            onClick={onDownloadGuide}
+            className="px-8 py-4 bg-white text-navy border-2 border-navy/10 rounded-2xl font-black flex items-center gap-3 hover:border-gold transition-all shadow-lg group"
+          >
+            <FileDown className="w-5 h-5 text-gold group-hover:scale-110 transition-transform" />
+            PANDUAN PDF
+          </button>
         </div>
       </motion.div>
 
@@ -203,50 +298,50 @@ const Hero = ({ onAction }: { onAction: () => void }) => (
         initial={{ opacity: 0, scale: 0.8 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 1, delay: 0.3 }}
-        className="relative hidden lg:flex items-center justify-center"
+        className="relative flex items-center justify-center mt-16 lg:mt-0"
       >
         <div className="relative">
           {/* Main Icon Circle */}
           <motion.div 
             animate={{ rotate: [0, 5, 0, -5, 0] }}
             transition={{ duration: 10, repeat: Infinity, ease: "easeInOut" }}
-            className="w-80 h-80 rounded-[3rem] bg-gradient-to-br from-navy to-navy-light flex items-center justify-center shadow-2xl relative z-10 border-8 border-white"
+            className="w-64 h-64 md:w-80 md:h-80 rounded-[2.5rem] md:rounded-[3rem] bg-gradient-to-br from-navy to-navy-light flex items-center justify-center shadow-2xl relative z-10 border-4 md:border-8 border-white"
           >
             <div className="absolute inset-0 bg-gold/10 rounded-[2.5rem] animate-pulse" />
-            <Mail className="w-40 h-40 text-gold" />
+            <Mail className="w-32 h-32 md:w-40 md:h-40 text-gold" />
           </motion.div>
 
           {/* Floating Decorative Icons */}
           <motion.div 
             animate={{ y: [0, -20, 0], x: [0, 10, 0] }}
             transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
-            className="absolute -top-12 -right-12 w-24 h-24 bg-gold rounded-3xl shadow-xl flex items-center justify-center z-20 border-4 border-white"
+            className="absolute -top-8 -right-8 md:-top-12 md:-right-12 w-16 h-16 md:w-24 md:h-24 bg-gold rounded-2xl md:rounded-3xl shadow-xl flex items-center justify-center z-20 border-2 md:border-4 border-white"
           >
-            <FileText className="w-10 h-10 text-navy" />
+            <FileText className="w-8 h-8 md:w-10 md:h-10 text-navy" />
           </motion.div>
 
           <motion.div 
             animate={{ y: [0, 20, 0], x: [0, -10, 0] }}
             transition={{ duration: 7, repeat: Infinity, ease: "easeInOut", delay: 1 }}
-            className="absolute -bottom-10 -left-10 w-32 h-32 bg-white rounded-[2rem] shadow-xl flex items-center justify-center z-20 border border-navy/5"
+            className="absolute -bottom-6 -left-6 md:-bottom-10 md:-left-10 w-24 h-24 md:w-32 md:h-32 bg-white rounded-2xl md:rounded-[2rem] shadow-xl flex items-center justify-center z-20 border border-navy/5"
           >
             <div className="text-center">
-              <ShieldCheck className="w-8 h-8 text-navy mx-auto mb-1" />
-              <p className="text-[10px] font-black text-navy uppercase tracking-widest">Aman</p>
-              <p className="text-lg font-black text-gold">100%</p>
+              <ShieldCheck className="w-6 h-6 md:w-8 md:h-8 text-navy mx-auto mb-1" />
+              <p className="text-[8px] md:text-[10px] font-black text-navy uppercase tracking-widest">Aman</p>
+              <p className="text-sm md:text-lg font-black text-gold">100%</p>
             </div>
           </motion.div>
 
           <motion.div 
             animate={{ x: [0, 20, 0], y: [0, 10, 0] }}
             transition={{ duration: 8, repeat: Infinity, ease: "easeInOut", delay: 0.5 }}
-            className="absolute top-1/2 -right-20 w-20 h-20 bg-navy-light rounded-2xl shadow-xl flex items-center justify-center z-20 border-4 border-white"
+            className="absolute top-1/2 -right-12 md:-right-20 w-16 h-16 md:w-20 md:h-20 bg-navy-light rounded-xl md:rounded-2xl shadow-xl flex items-center justify-center z-20 border-2 md:border-4 border-white"
           >
-            <Send className="w-8 h-8 text-gold" />
+            <Send className="w-6 h-6 md:w-8 md:h-8 text-gold" />
           </motion.div>
 
           {/* Background Glow */}
-          <div className="absolute inset-0 bg-gold/20 blur-[100px] -z-10 rounded-full scale-150" />
+          <div className="absolute inset-0 bg-gold/20 blur-[80px] md:blur-[100px] -z-10 rounded-full scale-150" />
         </div>
       </motion.div>
     </div>
@@ -268,6 +363,7 @@ const StatsDashboard = ({ data }: { data: Surat[] }) => {
 
   const totalSurat = data.length;
   const suratHariIni = data.filter(s => s.tanggal === format(new Date(), 'yyyy-MM-dd')).length;
+  const suratTerakhir = data.length > 0 ? data[0] : null;
 
   const COLORS = ['#0A0F2C', '#D4AF37', '#1A1F3C', '#B8860B', '#C0C0C0', '#F1C40F', '#2A2F4C'];
 
@@ -358,16 +454,26 @@ const StatsDashboard = ({ data }: { data: Surat[] }) => {
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ delay: 0.2 }}
-          className="card navy-gold-gradient text-white border-none"
+          className="card navy-gold-gradient text-white border-none relative overflow-hidden"
         >
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 relative z-10">
             <div className="p-4 bg-white/20 rounded-2xl">
-              <LayoutDashboard className="w-8 h-8 text-white" />
+              <CheckCircle2 className="w-8 h-8 text-white" />
             </div>
-            <div>
-              <p className="text-white/70 text-sm font-bold uppercase tracking-widest">Efisiensi</p>
-              <h4 className="text-4xl font-black">99.9%</h4>
+            <div className="flex-1 min-w-0">
+              <p className="text-white/70 text-[10px] font-bold uppercase tracking-widest">Nomor Terakhir</p>
+              <h4 className="text-xl md:text-2xl font-black truncate">
+                {suratTerakhir ? formatFullNomor(suratTerakhir.kode_surat, suratTerakhir.nomor) : '-'}
+              </h4>
+              {suratTerakhir && (
+                <p className="text-[10px] text-gold font-bold truncate mt-1">
+                  {suratTerakhir.perihal}
+                </p>
+              )}
             </div>
+          </div>
+          <div className="absolute -right-4 -bottom-4 opacity-10">
+            <ShieldCheck className="w-24 h-24" />
           </div>
         </motion.div>
       </div>
@@ -462,39 +568,67 @@ const RiwayatData = () => {
   };
 
   const exportToPDF = () => {
+    if (filteredAndSortedSurat.length === 0) {
+      toast.error('Tidak ada data untuk diekspor');
+      return;
+    }
+
     const doc = new jsPDF();
-    doc.setFontSize(18);
-    doc.setTextColor(10, 15, 44);
-    doc.text('RIWAYAT NOMOR SURAT - RUTAN SABANG', 14, 20);
+    
+    // Header
+    doc.setFillColor(10, 15, 44);
+    doc.rect(0, 0, 210, 30, 'F');
+    
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(16);
+    doc.setFont('helvetica', 'bold');
+    doc.text('RIWAYAT NOMOR SURAT - RUTAN SABANG', 105, 15, { align: 'center' });
+    
+    doc.setTextColor(212, 175, 55);
     doc.setFontSize(10);
+    doc.text('Sistem Informasi Pengambilan Nomor Surat Khusus (SIPENSUS)', 105, 22, { align: 'center' });
+
     doc.setTextColor(100);
-    doc.text(`Dicetak pada: ${format(new Date(), 'dd/MM/yyyy HH:mm')}`, 14, 28);
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Dicetak pada: ${format(new Date(), 'dd/MM/yyyy HH:mm')}`, 14, 38);
     
     const tableData = filteredAndSortedSurat.map(s => [
       s.nomor,
-      s.kode_surat,
+      formatFullNomor(s.kode_surat, s.nomor),
       s.perihal,
       formatDate(s.tanggal),
       s.tujuan,
       s.keterangan || '-'
     ]);
 
-    (doc as any).autoTable({
-      head: [['No.', 'Kode Surat', 'Perihal', 'Tanggal', 'Tujuan', 'Pemohon']],
+    autoTable(doc, {
+      head: [['No.', 'Nomor Lengkap', 'Perihal', 'Tanggal', 'Tujuan', 'Pemohon']],
       body: tableData,
-      startY: 35,
+      startY: 42,
       theme: 'grid',
-      headStyles: { fillColor: [10, 15, 44], textColor: [212, 175, 55], fontStyle: 'bold' },
-      alternateRowStyles: { fillColor: [245, 247, 250] }
+      headStyles: { fillColor: [10, 15, 44], textColor: [212, 175, 55], fontStyle: 'bold', halign: 'center' },
+      columnStyles: {
+        0: { halign: 'center', cellWidth: 15 },
+        1: { halign: 'center', cellWidth: 30 },
+        3: { halign: 'center', cellWidth: 25 }
+      },
+      alternateRowStyles: { fillColor: [245, 247, 250] },
+      styles: { fontSize: 9 }
     });
 
     doc.save(`Riwayat_Surat_${format(new Date(), 'yyyyMMdd_HHmm')}.pdf`);
+    toast.success('Riwayat PDF berhasil diunduh');
   };
 
   const exportToExcel = () => {
+    if (filteredAndSortedSurat.length === 0) {
+      toast.error('Tidak ada data untuk diekspor');
+      return;
+    }
     const ws = XLSX.utils.json_to_sheet(filteredAndSortedSurat.map(s => ({
       'No.': s.nomor,
-      'Kode Surat': s.kode_surat,
+      'Nomor Lengkap': formatFullNomor(s.kode_surat, s.nomor),
       'Perihal': s.perihal,
       'Tanggal': s.tanggal,
       'Tujuan': s.tujuan,
@@ -595,7 +729,7 @@ const RiwayatData = () => {
             <thead>
               <tr className="bg-navy text-white">
                 <th className="px-6 py-5 font-black text-xs uppercase tracking-widest text-gold">No.</th>
-                <th className="px-6 py-5 font-black text-xs uppercase tracking-widest text-gold">Kode Surat</th>
+                <th className="px-6 py-5 font-black text-xs uppercase tracking-widest text-gold">Nomor Lengkap</th>
                 <th className="px-6 py-5 font-black text-xs uppercase tracking-widest text-gold">Perihal</th>
                 <th className="px-6 py-5 font-black text-xs uppercase tracking-widest text-gold">Tanggal</th>
                 <th className="px-6 py-5 font-black text-xs uppercase tracking-widest text-gold">Tujuan</th>
@@ -631,9 +765,9 @@ const RiwayatData = () => {
                           {surat.kode_surat.substring(0, 2)}
                         </div>
                         <div className="flex flex-col">
-                          <span className="font-mono text-sm font-black text-navy">{surat.kode_surat}{surat.nomor}</span>
+                          <span className="font-mono text-sm font-black text-navy">{formatFullNomor(surat.kode_surat, surat.nomor)}</span>
                           <button 
-                            onClick={() => handleCopy(`${surat.kode_surat}${surat.nomor}`)} 
+                            onClick={() => handleCopy(formatFullNomor(surat.kode_surat, surat.nomor))} 
                             className="text-[10px] text-gold-dark font-bold hover:underline flex items-center gap-1"
                           >
                             <Copy className="w-2.5 h-2.5" /> Salin Kode
@@ -659,7 +793,7 @@ const RiwayatData = () => {
                     <td className="px-6 py-6">
                       <div className="flex justify-center">
                         <button 
-                          onClick={() => handleCopy(`${surat.kode_surat}${surat.nomor}`)}
+                          onClick={() => handleCopy(formatFullNomor(surat.kode_surat, surat.nomor))}
                           className="p-2.5 text-gold hover:text-gold-dark hover:bg-gold/10 rounded-xl transition-all"
                           title="Salin Nomor Surat"
                         >
@@ -694,23 +828,53 @@ const FormAmbilNomor = ({ onSuccess }: { onSuccess: () => void }) => {
     kode_surat: '',
     tanggal: format(new Date(), 'yyyy-MM-dd'),
     tujuan: '',
-    keterangan: ''
+    keterangan: '',
+    nomor: 0 // Akan dihitung saat submit
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     try {
-      const { data: insertedData, error } = await supabase.from('surat').insert([formData]).select();
+      // 1. Hitung nomor urut berdasarkan tahun dari tanggal surat
+      const selectedDate = parseISO(formData.tanggal);
+      const year = getYear(selectedDate);
+      const startDate = format(startOfYear(selectedDate), 'yyyy-MM-dd');
+      const endDate = format(endOfYear(selectedDate), 'yyyy-MM-dd');
+
+      // Ambil nomor terakhir di tahun tersebut
+      const { data: lastSurat, error: fetchError } = await supabase
+        .from('surat')
+        .select('nomor')
+        .gte('tanggal', startDate)
+        .lte('tanggal', endDate)
+        .order('nomor', { ascending: false })
+        .limit(1);
+
+      if (fetchError) throw fetchError;
+
+      const nextNomor = lastSurat && lastSurat.length > 0 ? lastSurat[0].nomor + 1 : 1;
+
+      // 2. Simpan data dengan nomor yang sudah dihitung
+      const dataToInsert = { ...formData, nomor: nextNomor };
+      const { data: insertedData, error } = await supabase.from('surat').insert([dataToInsert]).select();
+      
       if (error) throw error;
       
       const newSurat = insertedData?.[0];
-      const fullNomor = `${formData.kode_surat}${newSurat?.nomor || ''}`;
+      const fullNomor = formatFullNomor(formData.kode_surat, newSurat?.nomor || nextNomor);
       toast.success('Nomor surat berhasil dibuat!', {
         description: `Nomor Lengkap: ${fullNomor}`,
         duration: 5000,
       });
-      setFormData({ perihal: '', kode_surat: '', tanggal: format(new Date(), 'yyyy-MM-dd'), tujuan: '', keterangan: '' });
+      setFormData({ 
+        perihal: '', 
+        kode_surat: '', 
+        tanggal: format(new Date(), 'yyyy-MM-dd'), 
+        tujuan: '', 
+        keterangan: '',
+        nomor: 0
+      });
       onSuccess();
     } catch (error: any) {
       toast.error('Gagal membuat nomor surat', { description: error.message });
@@ -839,7 +1003,10 @@ export default function App() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
             >
-              <Hero onAction={() => setActiveTab('ambil')} />
+              <Hero 
+                onAction={() => setActiveTab('ambil')} 
+                onDownloadGuide={generateGuidePDF}
+              />
               
               {/* About Section */}
               <section className="py-32 bg-white relative overflow-hidden">

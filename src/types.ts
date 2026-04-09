@@ -9,4 +9,4 @@ export interface Surat {
   created_at: string;
 }
 
-export type SuratInsert = Omit<Surat, 'id' | 'created_at' | 'nomor'>;
+export type SuratInsert = Omit<Surat, 'id' | 'created_at'>;
