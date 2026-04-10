@@ -32,7 +32,9 @@ import {
   FileText,
   CheckCircle2,
   MousePointer2,
-  Key
+  Key,
+  Quote,
+  Check
 } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
 import { supabase } from './lib/supabase';
@@ -82,9 +84,14 @@ const Navbar = ({ activeTab, setActiveTab }: { activeTab: string, setActiveTab: 
             <motion.div 
               whileHover={{ rotate: 360 }}
               transition={{ duration: 0.5 }}
-              className="bg-white p-1.5 rounded-lg shadow-gold/20 shadow-lg flex items-center justify-center w-10 h-10 md:w-12 md:h-12"
+              className="rounded-full shadow-gold/20 shadow-lg flex items-center justify-center w-10 h-10 md:w-12 md:h-12 overflow-hidden"
             >
-              <Mail className="w-6 h-6 md:w-7 md:h-7 text-navy" />
+              <img 
+                src="https://iili.io/B1rLqTN.md.png" 
+                alt="Logo Rutan Sabang" 
+                className="w-full h-full object-cover"
+                referrerPolicy="no-referrer"
+              />
             </motion.div>
             <div className="flex flex-col">
               <span className="font-black text-sm md:text-xl tracking-tighter leading-none">SIPENSUS</span>
@@ -230,13 +237,16 @@ const generateGuidePDF = () => {
 
 const Hero = ({ onAction, onDownloadGuide }: { onAction: () => void, onDownloadGuide: () => void }) => (
   <section className="relative min-h-[90vh] flex items-center justify-center overflow-hidden py-20">
-    {/* Animated Background Elements */}
-    <div className="absolute inset-0 z-0 bg-slate-50">
-      <div className="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none">
-        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-gold blur-[120px] animate-pulse" />
-        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-navy blur-[120px] animate-pulse" style={{ animationDelay: '1s' }} />
-      </div>
-      <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-5" />
+    {/* Background Image with Overlay */}
+    <div className="absolute inset-0 z-0">
+      <img 
+        src="https://iili.io/B1inD8u.md.jpg" 
+        alt="Background" 
+        className="w-full h-full object-cover"
+        referrerPolicy="no-referrer"
+      />
+      <div className="absolute inset-0 bg-navy/60" />
+      <div className="absolute inset-0 bg-gradient-to-b from-navy/30 via-transparent to-navy/80" />
     </div>
     
     <div className="relative z-10 max-w-7xl mx-auto px-4 grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
@@ -255,41 +265,44 @@ const Hero = ({ onAction, onDownloadGuide }: { onAction: () => void, onDownloadG
           >
             <Key className="w-10 h-10 md:w-12 md:h-12 text-navy" />
           </motion.div>
-          <motion.div 
-            initial={{ scale: 0.8, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ delay: 0.2 }}
-            className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-navy/5 border border-navy/10 text-navy text-xs font-black uppercase tracking-widest"
-          >
-            <Sparkles className="w-4 h-4 text-gold" />
-            Inovasi Digital Pemasyarakatan
-          </motion.div>
+          <div className="flex flex-col">
+            <motion.div 
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ delay: 0.2 }}
+              className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/10 border border-white/20 text-white text-[10px] font-black uppercase tracking-widest mb-2"
+            >
+              <Sparkles className="w-3 h-3 text-gold" />
+              Direktorat Jenderal Pemasyarakatan
+            </motion.div>
+            <span className="text-white/60 text-xs font-bold uppercase tracking-[0.2em]">Kementerian Imigrasi dan Pemasyarakatan</span>
+          </div>
         </div>
         
-        <h1 className="text-5xl md:text-7xl font-black text-navy mb-6 leading-[0.9] tracking-tighter">
-          SIPENSUS <br />
-          <span className="text-gold">SABANG</span>
+        <h1 className="text-4xl md:text-6xl font-black text-white mb-6 leading-tight tracking-tighter font-display">
+          RUMAH TAHANAN NEGARA <br />
+          <span className="text-gold">KELAS IIB SABANG</span>
         </h1>
         
-        <p className="text-lg md:text-xl text-slate-600 mb-10 max-w-xl font-medium leading-relaxed">
-          Platform resmi pengambilan nomor surat digital Rumah Tahanan Negara Kelas IIB Sabang. Cepat, akurat, dan terintegrasi.
+        <p className="text-lg md:text-xl text-slate-300 mb-10 max-w-xl font-medium leading-relaxed">
+          Sistem Penomoran Surat Digital yang Modern dan Efisien untuk Pelayanan Administrasi yang Lebih Baik.
         </p>
 
         <div className="flex flex-wrap gap-4">
           <button 
             onClick={onAction}
-            className="px-8 py-4 bg-navy text-white rounded-2xl font-black flex items-center gap-3 hover:bg-navy-light transition-all shadow-xl shadow-navy/20 group"
+            className="px-8 py-4 bg-gold text-navy rounded-2xl font-black flex items-center gap-3 hover:bg-white transition-all shadow-xl shadow-gold/20 group"
           >
-            AMBIL NOMOR SEKARANG
+            AMBIL NOMOR SURAT
             <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
           </button>
           
           <button 
             onClick={onDownloadGuide}
-            className="px-8 py-4 bg-white text-navy border-2 border-navy/10 rounded-2xl font-black flex items-center gap-3 hover:border-gold transition-all shadow-lg group"
+            className="px-8 py-4 bg-white/5 text-white border-2 border-white/20 rounded-2xl font-black flex items-center gap-3 hover:bg-white/10 hover:border-gold transition-all shadow-lg group"
           >
             <FileDown className="w-5 h-5 text-gold group-hover:scale-110 transition-transform" />
-            PANDUAN PDF
+            PANDUAN PENGGUNAAN
           </button>
         </div>
       </motion.div>
@@ -305,7 +318,7 @@ const Hero = ({ onAction, onDownloadGuide }: { onAction: () => void, onDownloadG
           <motion.div 
             animate={{ rotate: [0, 5, 0, -5, 0] }}
             transition={{ duration: 10, repeat: Infinity, ease: "easeInOut" }}
-            className="w-64 h-64 md:w-80 md:h-80 rounded-[2.5rem] md:rounded-[3rem] bg-gradient-to-br from-navy to-navy-light flex items-center justify-center shadow-2xl relative z-10 border-4 md:border-8 border-white"
+            className="w-64 h-64 md:w-80 md:h-80 rounded-[2.5rem] md:rounded-[3rem] bg-gradient-to-br from-navy-light to-navy flex items-center justify-center shadow-2xl relative z-10 border-4 md:border-8 border-white/20"
           >
             <div className="absolute inset-0 bg-gold/10 rounded-[2.5rem] animate-pulse" />
             <Mail className="w-32 h-32 md:w-40 md:h-40 text-gold" />
@@ -315,7 +328,7 @@ const Hero = ({ onAction, onDownloadGuide }: { onAction: () => void, onDownloadG
           <motion.div 
             animate={{ y: [0, -20, 0], x: [0, 10, 0] }}
             transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
-            className="absolute -top-8 -right-8 md:-top-12 md:-right-12 w-16 h-16 md:w-24 md:h-24 bg-gold rounded-2xl md:rounded-3xl shadow-xl flex items-center justify-center z-20 border-2 md:border-4 border-white"
+            className="absolute -top-8 -right-8 md:-top-12 md:-right-12 w-16 h-16 md:w-24 md:h-24 bg-gold rounded-2xl md:rounded-3xl shadow-xl flex items-center justify-center z-20 border-2 md:border-4 border-navy"
           >
             <FileText className="w-8 h-8 md:w-10 md:h-10 text-navy" />
           </motion.div>
@@ -335,7 +348,7 @@ const Hero = ({ onAction, onDownloadGuide }: { onAction: () => void, onDownloadG
           <motion.div 
             animate={{ x: [0, 20, 0], y: [0, 10, 0] }}
             transition={{ duration: 8, repeat: Infinity, ease: "easeInOut", delay: 0.5 }}
-            className="absolute top-1/2 -right-12 md:-right-20 w-16 h-16 md:w-20 md:h-20 bg-navy-light rounded-xl md:rounded-2xl shadow-xl flex items-center justify-center z-20 border-2 md:border-4 border-white"
+            className="absolute top-1/2 -right-12 md:-right-20 w-16 h-16 md:w-20 md:h-20 bg-navy-light rounded-xl md:rounded-2xl shadow-xl flex items-center justify-center z-20 border-2 md:border-4 border-white/20"
           >
             <Send className="w-6 h-6 md:w-8 md:h-8 text-gold" />
           </motion.div>
@@ -344,6 +357,40 @@ const Hero = ({ onAction, onDownloadGuide }: { onAction: () => void, onDownloadG
           <div className="absolute inset-0 bg-gold/20 blur-[80px] md:blur-[100px] -z-10 rounded-full scale-150" />
         </div>
       </motion.div>
+    </div>
+  </section>
+);
+
+const FungsiAplikasi = () => (
+  <section className="py-24 bg-white">
+    <div className="max-w-7xl mx-auto px-4">
+      <div className="text-center mb-16">
+        <h2 className="text-3xl md:text-5xl font-black text-navy mb-4 tracking-tight">Fungsi Aplikasi</h2>
+        <p className="text-slate-500 font-medium">Fitur utama untuk mendukung produktivitas kerja</p>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+        {[
+          { title: 'Generate Otomatis', desc: 'Nomor surat otomatis dengan format terstruktur.' },
+          { title: 'Penyimpanan Aman', desc: 'Data surat tersimpan secara digital dan terpusat.' },
+          { title: 'Export Data', desc: 'Cetak riwayat ke format PDF dan Excel dengan mudah.' },
+          { title: 'Riwayat Lengkap', desc: 'Pantau semua surat yang pernah dibuat kapan saja.' }
+        ].map((item, i) => (
+          <motion.div 
+            key={i}
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ delay: i * 0.1 }}
+            className="p-8 rounded-3xl bg-slate-50 border border-slate-100 hover:border-gold/30 hover:shadow-xl transition-all group"
+          >
+            <div className="w-12 h-12 rounded-2xl bg-gold/10 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+              <Check className="w-6 h-6 text-gold" />
+            </div>
+            <h3 className="text-xl font-black text-navy mb-3">{item.title}</h3>
+            <p className="text-slate-500 text-sm leading-relaxed">{item.desc}</p>
+          </motion.div>
+        ))}
+      </div>
     </div>
   </section>
 );
@@ -1024,22 +1071,22 @@ export default function App() {
                           Profil Instansi
                         </div>
                         <h2 className="text-4xl md:text-6xl font-black text-navy mb-6 tracking-tighter leading-none">
-                          Integritas & <br />
-                          <span className="text-gold">Pelayanan Prima</span>
+                          Tentang <br />
+                          <span className="text-gold">Rutan Sabang</span>
                         </h2>
                         <div className="w-32 h-2 bg-gold rounded-full" />
                       </div>
                       <p className="text-xl text-slate-600 leading-relaxed font-medium">
-                        Rutan Kelas IIB Sabang terus berinovasi untuk memberikan kepastian hukum dan pembinaan yang bermartabat bagi seluruh warga binaan.
+                        Rumah Tahanan Negara Kelas IIB Sabang berdiri sejak tahun 1985, berkomitmen memberikan pelayanan terbaik dalam sistem pemasyarakatan Indonesia.
                       </p>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                         <div className="card border-none bg-slate-50 p-8 hover:bg-navy hover:text-white transition-all duration-500 group">
                           <h3 className="font-black text-navy group-hover:text-gold mb-3 uppercase tracking-widest text-xs">Visi Kami</h3>
-                          <p className="text-sm text-slate-500 group-hover:text-slate-300 leading-relaxed">Mewujudkan sistem pemasyarakatan yang transparan dan humanis di wilayah Sabang.</p>
+                          <p className="text-sm text-slate-500 group-hover:text-slate-300 leading-relaxed">Terwujudnya Sistem Pemasyarakatan yang Profesional.</p>
                         </div>
                         <div className="card border-none bg-slate-50 p-8 hover:bg-gold hover:text-navy transition-all duration-500 group">
                           <h3 className="font-black text-navy group-hover:text-navy mb-3 uppercase tracking-widest text-xs">Misi Kami</h3>
-                          <p className="text-sm text-slate-500 group-hover:text-navy/70 leading-relaxed">Memberikan pembinaan kemandirian dan kepribadian yang efektif bagi warga binaan.</p>
+                          <p className="text-sm text-slate-500 group-hover:text-navy/70 leading-relaxed">Melaksanakan pembinaan tahanan secara optimal dengan mengedepankan HAM dan nilai-nilai kemanusiaan.</p>
                         </div>
                       </div>
                     </motion.div>
@@ -1069,6 +1116,8 @@ export default function App() {
                 </div>
               </section>
 
+              <FungsiAplikasi />
+
               <AlurPengambilan />
 
               <AppDescription />
@@ -1076,7 +1125,14 @@ export default function App() {
               <footer className="py-20 bg-navy text-white border-t border-gold/20">
                 <div className="max-w-7xl mx-auto px-4 text-center">
                   <div className="flex items-center justify-center gap-3 mb-8">
-                    <ShieldCheck className="w-10 h-10 text-gold" />
+                    <div className="w-12 h-12 rounded-full flex items-center justify-center overflow-hidden">
+                      <img 
+                        src="https://iili.io/B1rLqTN.md.png" 
+                        alt="Logo Rutan Sabang" 
+                        className="w-full h-full object-cover"
+                        referrerPolicy="no-referrer"
+                      />
+                    </div>
                     <div className="text-left">
                       <span className="block font-black text-2xl tracking-tighter leading-none">SIPENSUS</span>
                       <span className="text-xs text-gold font-bold tracking-widest uppercase">Rutan Sabang</span>
