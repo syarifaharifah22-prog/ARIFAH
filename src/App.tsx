@@ -84,7 +84,7 @@ const Navbar = ({ activeTab, setActiveTab }: { activeTab: string, setActiveTab: 
             <motion.div 
               whileHover={{ rotate: 360 }}
               transition={{ duration: 0.5 }}
-              className="rounded-full shadow-gold/20 shadow-lg flex items-center justify-center w-10 h-10 md:w-12 md:h-12 overflow-hidden"
+              className="rounded-full shadow-gold/20 shadow-lg flex items-center justify-center w-12 h-12 md:w-16 md:h-16 overflow-hidden"
             >
               <img 
                 src="https://iili.io/B1rLqTN.md.png" 
@@ -231,8 +231,10 @@ const generateGuidePDF = () => {
   doc.setTextColor(150);
   doc.text('SIPENSUS Sabang - Inovasi Digital Pemasyarakatan', 105, 277, { align: 'center' });
 
-  doc.save('Panduan_SIPENSUS_Sabang.pdf');
-  toast.success('Panduan PDF berhasil diunduh');
+  const blob = doc.output('blob');
+  const url = URL.createObjectURL(blob);
+  window.open(url, '_blank');
+  toast.success('Panduan dibuka di tab baru');
 };
 
 const Hero = ({ onAction, onDownloadGuide }: { onAction: () => void, onDownloadGuide: () => void }) => (
@@ -240,13 +242,13 @@ const Hero = ({ onAction, onDownloadGuide }: { onAction: () => void, onDownloadG
     {/* Background Image with Overlay */}
     <div className="absolute inset-0 z-0">
       <img 
-        src="https://iili.io/B1inD8u.md.jpg" 
+        src="https://iili.io/BGmj2dF.jpg" 
         alt="Background" 
-        className="w-full h-full object-cover"
+        className="w-full h-full object-cover object-center"
         referrerPolicy="no-referrer"
       />
-      <div className="absolute inset-0 bg-navy/60" />
-      <div className="absolute inset-0 bg-gradient-to-b from-navy/30 via-transparent to-navy/80" />
+      <div className="absolute inset-0 bg-navy/50" />
+      <div className="absolute inset-0 bg-gradient-to-b from-navy/40 via-transparent to-navy/90" />
     </div>
     
     <div className="relative z-10 max-w-7xl mx-auto px-4 grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
@@ -256,7 +258,7 @@ const Hero = ({ onAction, onDownloadGuide }: { onAction: () => void, onDownloadG
         transition={{ duration: 0.8 }}
         className="text-left"
       >
-        <div className="flex items-center gap-4 mb-6">
+        <div className="flex items-center gap-4 mb-2">
           <motion.div
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}
@@ -279,12 +281,12 @@ const Hero = ({ onAction, onDownloadGuide }: { onAction: () => void, onDownloadG
           </div>
         </div>
         
-        <h1 className="text-4xl md:text-6xl font-black text-white mb-6 leading-tight tracking-tighter font-display">
+        <h1 className="text-4xl md:text-6xl font-black text-white mb-2 leading-tight tracking-tighter font-display">
           RUMAH TAHANAN NEGARA <br />
           <span className="text-gold">KELAS IIB SABANG</span>
         </h1>
         
-        <p className="text-lg md:text-xl text-slate-300 mb-10 max-w-xl font-medium leading-relaxed">
+        <p className="text-lg md:text-xl text-slate-300 mb-8 max-w-xl font-medium leading-relaxed">
           Sistem Penomoran Surat Digital yang Modern dan Efisien untuk Pelayanan Administrasi yang Lebih Baik.
         </p>
 
@@ -361,40 +363,6 @@ const Hero = ({ onAction, onDownloadGuide }: { onAction: () => void, onDownloadG
   </section>
 );
 
-const FungsiAplikasi = () => (
-  <section className="py-24 bg-white">
-    <div className="max-w-7xl mx-auto px-4">
-      <div className="text-center mb-16">
-        <h2 className="text-3xl md:text-5xl font-black text-navy mb-4 tracking-tight">Fungsi Aplikasi</h2>
-        <p className="text-slate-500 font-medium">Fitur utama untuk mendukung produktivitas kerja</p>
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-        {[
-          { title: 'Generate Otomatis', desc: 'Nomor surat otomatis dengan format terstruktur.' },
-          { title: 'Penyimpanan Aman', desc: 'Data surat tersimpan secara digital dan terpusat.' },
-          { title: 'Export Data', desc: 'Cetak riwayat ke format PDF dan Excel dengan mudah.' },
-          { title: 'Riwayat Lengkap', desc: 'Pantau semua surat yang pernah dibuat kapan saja.' }
-        ].map((item, i) => (
-          <motion.div 
-            key={i}
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ delay: i * 0.1 }}
-            className="p-8 rounded-3xl bg-slate-50 border border-slate-100 hover:border-gold/30 hover:shadow-xl transition-all group"
-          >
-            <div className="w-12 h-12 rounded-2xl bg-gold/10 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
-              <Check className="w-6 h-6 text-gold" />
-            </div>
-            <h3 className="text-xl font-black text-navy mb-3">{item.title}</h3>
-            <p className="text-slate-500 text-sm leading-relaxed">{item.desc}</p>
-          </motion.div>
-        ))}
-      </div>
-    </div>
-  </section>
-);
-
 const StatsDashboard = ({ data }: { data: Surat[] }) => {
   const chartData = useMemo(() => {
     const last7Days = Array.from({ length: 7 }).map((_, i) => {
@@ -405,14 +373,12 @@ const StatsDashboard = ({ data }: { data: Surat[] }) => {
     return last7Days.map(date => ({
       name: format(parseISO(date), 'dd MMM'),
       value: data.filter(s => s.tanggal === date).length
-    })).filter(item => item.value > 0); // Only show days with data in PieChart
+    }));
   }, [data]);
 
   const totalSurat = data.length;
   const suratHariIni = data.filter(s => s.tanggal === format(new Date(), 'yyyy-MM-dd')).length;
   const suratTerakhir = data.length > 0 ? data[0] : null;
-
-  const COLORS = ['#0A0F2C', '#D4AF37', '#1A1F3C', '#B8860B', '#C0C0C0', '#F1C40F', '#2A2F4C'];
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-12">
@@ -427,32 +393,55 @@ const StatsDashboard = ({ data }: { data: Surat[] }) => {
             Distribusi Surat (7 Hari Terakhir)
           </h3>
           <div className="px-3 py-1 bg-gold/10 text-gold-dark text-xs font-bold rounded-full uppercase tracking-widest">
-            Pie Chart View
+            Bar Chart View
           </div>
         </div>
         <div className="h-[300px] w-full">
-          {chartData.length > 0 ? (
+          {data.length > 0 ? (
             <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={chartData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={100}
-                  paddingAngle={5}
-                  dataKey="value"
-                  label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}
+              <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="barNavy" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#1A1F3C" stopOpacity={1}/>
+                    <stop offset="100%" stopColor="#0A0F2C" stopOpacity={1}/>
+                  </linearGradient>
+                  <linearGradient id="barGold" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#F1C40F" stopOpacity={1}/>
+                    <stop offset="100%" stopColor="#D4AF37" stopOpacity={1}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis 
+                  dataKey="name" 
+                  axisLine={false} 
+                  tickLine={false} 
+                  tick={{ fill: '#64748b', fontSize: 12, fontWeight: 600 }}
+                  dy={10}
+                />
+                <YAxis 
+                  axisLine={false} 
+                  tickLine={false} 
+                  tick={{ fill: '#64748b', fontSize: 12, fontWeight: 600 }}
+                />
+                <Tooltip 
+                  cursor={{ fill: '#f8fafc' }}
+                  contentStyle={{ 
+                    borderRadius: '12px', 
+                    border: 'none', 
+                    boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)',
+                    padding: '12px'
+                  }}
+                />
+                <Bar 
+                  dataKey="value" 
+                  radius={[6, 6, 0, 0]} 
+                  barSize={40}
                 >
                   {chartData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    <Cell key={`cell-${index}`} fill={index % 2 === 0 ? 'url(#barNavy)' : 'url(#barGold)'} />
                   ))}
-                </Pie>
-                <Tooltip 
-                  contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-                />
-                <Legend verticalAlign="bottom" height={36}/>
-              </PieChart>
+                </Bar>
+              </BarChart>
             </ResponsiveContainer>
           ) : (
             <div className="h-full flex flex-col items-center justify-center text-slate-400 gap-2">
@@ -1116,8 +1105,6 @@ export default function App() {
                 </div>
               </section>
 
-              <FungsiAplikasi />
-
               <AlurPengambilan />
 
               <AppDescription />
@@ -1125,7 +1112,7 @@ export default function App() {
               <footer className="py-20 bg-navy text-white border-t border-gold/20">
                 <div className="max-w-7xl mx-auto px-4 text-center">
                   <div className="flex items-center justify-center gap-3 mb-8">
-                    <div className="w-12 h-12 rounded-full flex items-center justify-center overflow-hidden">
+                    <div className="w-16 h-16 md:w-20 md:h-20 rounded-full flex items-center justify-center overflow-hidden">
                       <img 
                         src="https://iili.io/B1rLqTN.md.png" 
                         alt="Logo Rutan Sabang" 
