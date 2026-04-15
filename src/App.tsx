@@ -201,7 +201,7 @@ const generateGuidePDF = () => {
   doc.setFontSize(11);
   const steps = [
     'Buka menu "AMBIL NOMOR" pada navigasi atas atau klik tombol di beranda.',
-    'Pilih "Kode Surat" sesuai dengan jenis surat yang akan dibuat.',
+    'Ketik "Kode Surat" sesuai dengan jenis surat yang akan dibuat.',
     'Isi "Perihal Surat" dengan ringkasan isi surat.',
     'Isi "Tujuan Surat" (Instansi atau perorangan yang dituju).',
     'Isi "Pemohon/Keterangan" (Nama bagian atau petugas yang meminta).',
@@ -240,15 +240,9 @@ const generateGuidePDF = () => {
 const Hero = ({ onAction, onDownloadGuide }: { onAction: () => void, onDownloadGuide: () => void }) => (
   <section className="relative min-h-[90vh] flex items-center justify-center overflow-hidden py-20">
     {/* Background Image with Overlay */}
-    <div className="absolute inset-0 z-0">
-      <img 
-        src="https://iili.io/BGmj2dF.jpg" 
-        alt="Background" 
-        className="w-full h-full object-cover object-center"
-        referrerPolicy="no-referrer"
-      />
-      <div className="absolute inset-0 bg-navy/50" />
-      <div className="absolute inset-0 bg-gradient-to-b from-navy/40 via-transparent to-navy/90" />
+    <div className="absolute inset-0 z-0 bg-navy overflow-hidden">
+      <div className="absolute inset-0 bg-gradient-to-br from-navy via-navy/95 to-navy-light/90" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(212,175,55,0.1),transparent_70%)]" />
     </div>
     
     <div className="relative z-10 max-w-7xl mx-auto px-4 grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
@@ -1107,8 +1101,6 @@ export default function App() {
 
               <AlurPengambilan />
 
-              <AppDescription />
-              
               <footer className="py-20 bg-navy text-white border-t border-gold/20">
                 <div className="max-w-7xl mx-auto px-4 text-center">
                   <div className="flex items-center justify-center gap-3 mb-8">
@@ -1250,50 +1242,3 @@ const AlurPengambilan = () => {
     </section>
   );
 };
-
-const AppDescription = () => (
-  <section className="py-32 bg-slate-50">
-    <div className="max-w-7xl mx-auto px-4 text-center">
-      <h2 className="text-3xl md:text-5xl font-black text-navy mb-20 tracking-tight">Keunggulan <span className="gold-gradient-text">Sistem Kami</span></h2>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
-        {[
-          { 
-            title: 'Digitalisasi Total', 
-            desc: 'Meninggalkan pencatatan manual yang berisiko hilang atau rusak.',
-            icon: LayoutDashboard,
-            color: 'from-navy to-navy-light'
-          },
-          { 
-            title: 'Akurasi Data', 
-            desc: 'Sistem penomoran otomatis yang menjamin urutan tetap konsisten.',
-            icon: ShieldCheck,
-            color: 'from-gold-dark to-gold'
-          },
-          { 
-            title: 'Analisis Realtime', 
-            desc: 'Pantau volume persuratan setiap hari melalui dashboard statistik.',
-            icon: BarChart3,
-            color: 'from-navy-light to-navy'
-          }
-        ].map((item, i) => (
-          <motion.div 
-            key={i}
-            initial={{ opacity: 0, y: 30 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ delay: i * 0.2 }}
-            className="group relative"
-          >
-            <div className="card h-full p-10 border-none shadow-xl hover:-translate-y-2 transition-all duration-500">
-              <div className={cn("inline-flex p-5 rounded-3xl bg-gradient-to-br text-white mb-8 shadow-lg group-hover:scale-110 transition-transform", item.color)}>
-                <item.icon className="w-10 h-10" />
-              </div>
-              <h3 className="text-2xl font-black mb-4 text-navy">{item.title}</h3>
-              <p className="text-slate-500 font-medium leading-relaxed">{item.desc}</p>
-            </div>
-          </motion.div>
-        ))}
-      </div>
-    </div>
-  </section>
-);
