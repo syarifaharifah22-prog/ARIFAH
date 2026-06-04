@@ -853,58 +853,177 @@ const RiwayatData = () => {
 
 const FormAmbilNomor = ({ onSuccess }: { onSuccess: () => void }) => {
   const [loading, setLoading] = useState(false);
-  const [formData, setFormData] = useState<SuratInsert>({
-    perihal: '',
-    kode_surat: '',
-    tanggal: format(new Date(), 'yyyy-MM-dd'),
-    tujuan: '',
-    keterangan: '',
-    nomor: 0 // Akan dihitung saat submit
-  });
+  const [jumlahSurat, setJumlahSurat] = useState(1);
+  const [activeLetterTab, setActiveLetterTab] = useState(0);
+  
+  const [letters, setLetters] = useState<SuratInsert[]>([
+    {
+      perihal: '',
+      kode_surat: '',
+      tanggal: format(new Date(), 'yyyy-MM-dd'),
+      tujuan: '',
+      keterangan: '',
+      nomor: 0
+    }
+  ]);
+
+  const handleJumlahChange = (newCount: number) => {
+    if (newCount < 1 || newCount > 20) return; // Batasi maksimal 20 nomor sekaligus demi performa
+    setJumlahSurat(newCount);
+    
+    setLetters(prev => {
+      if (newCount === prev.length) return prev;
+      if (newCount > prev.length) {
+        // Tambahkan surat baru, salin data dari surat terakhir/pertama agar mempercepat pengisian
+        const template = prev[prev.length - 1] || prev[0] || {
+          perihal: '',
+          kode_surat: '',
+          tanggal: format(new Date(), 'yyyy-MM-dd'),
+          tujuan: '',
+          keterangan: '',
+          nomor: 0
+        };
+        const extra = Array.from({ length: newCount - prev.length }).map(() => ({
+          ...template,
+          // Kosongkan detail spesifik agar petugas tidak keliru, tapi biarkan tanggal & keterangan
+          perihal: '',
+          tujuan: ''
+        }));
+        return [...prev, ...extra];
+      } else {
+        // Kurangi surat
+        return prev.slice(0, newCount);
+      }
+    });
+
+    if (activeLetterTab >= newCount) {
+      setActiveLetterTab(newCount - 1);
+    }
+  };
+
+  const updateLetterField = (index: number, field: keyof SuratInsert, value: any) => {
+    setLetters(prev => {
+      const updated = [...prev];
+      updated[index] = {
+        ...updated[index],
+        [field]: value
+      };
+      return updated;
+    });
+  };
+
+  const copyFirstToAll = () => {
+    if (letters.length <= 1) return;
+    const firstLetter = letters[0];
+    setLetters(prev => prev.map((letter, idx) => {
+      if (idx === 0) return letter;
+      return {
+        ...letter,
+        kode_surat: firstLetter.kode_surat,
+        tanggal: firstLetter.tanggal,
+        tujuan: firstLetter.tujuan,
+        keterangan: firstLetter.keterangan,
+        perihal: firstLetter.perihal // Salin juga perihal
+      };
+    }));
+    toast.success('Berhasil menyalin data Surat #1 ke seluruh surat!');
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Validasi semua field wajib di semua surat (Hanya Kode, Perihal, Tanggal)
+    for (let i = 0; i < letters.length; i++) {
+      const letter = letters[i];
+      if (!letter.kode_surat.trim()) {
+        toast.error(`Kode Surat ke-${i + 1} belum diisi!`);
+        setActiveLetterTab(i);
+        return;
+      }
+      if (!letter.perihal.trim()) {
+        toast.error(`Perihal Surat ke-${i + 1} belum diisi!`);
+        setActiveLetterTab(i);
+        return;
+      }
+      if (!letter.tanggal) {
+        toast.error(`Tanggal Surat ke-${i + 1} belum diisi!`);
+        setActiveLetterTab(i);
+        return;
+      }
+    }
+
     setLoading(true);
     try {
-      // 1. Hitung nomor urut berdasarkan tahun dari tanggal surat
-      const selectedDate = parseISO(formData.tanggal);
-      const year = getYear(selectedDate);
-      const startDate = format(startOfYear(selectedDate), 'yyyy-MM-dd');
-      const endDate = format(endOfYear(selectedDate), 'yyyy-MM-dd');
+      // Kelompokkan surat berdasarkan tahun untuk menghitung nomor urut agar kuat & presisi
+      const lastNomorByYear: { [year: number]: number } = {};
 
-      // Ambil nomor terakhir di tahun tersebut
-      const { data: lastSurat, error: fetchError } = await supabase
-        .from('surat')
-        .select('nomor')
-        .gte('tanggal', startDate)
-        .lte('tanggal', endDate)
-        .order('nomor', { ascending: false })
-        .limit(1);
+      const getNextNomorForYear = async (year: number) => {
+        if (lastNomorByYear[year] !== undefined) {
+          lastNomorByYear[year]++;
+          return lastNomorByYear[year];
+        }
 
-      if (fetchError) throw fetchError;
+        const startDate = `${year}-01-01`;
+        const endDate = `${year}-12-31`;
 
-      const nextNomor = lastSurat && lastSurat.length > 0 ? lastSurat[0].nomor + 1 : 1;
+        const { data: lastSurat, error: fetchError } = await supabase
+          .from('surat')
+          .select('nomor')
+          .gte('tanggal', startDate)
+          .lte('tanggal', endDate)
+          .order('nomor', { ascending: false })
+          .limit(1);
 
-      // 2. Simpan data dengan nomor yang sudah dihitung
-      const dataToInsert = { ...formData, nomor: nextNomor };
-      const { data: insertedData, error } = await supabase.from('surat').insert([dataToInsert]).select();
+        if (fetchError) throw fetchError;
+
+        const nextNomor = lastSurat && lastSurat.length > 0 ? lastSurat[0].nomor + 1 : 1;
+        lastNomorByYear[year] = nextNomor;
+        return nextNomor;
+      };
+
+      // Siapkan bulk insert array dengan sequence yang dihitung secara dinamis
+      const inserts: SuratInsert[] = [];
+      for (const letter of letters) {
+        const year = getYear(parseISO(letter.tanggal));
+        const seq = await getNextNomorForYear(year);
+        inserts.push({
+          ...letter,
+          nomor: seq
+        });
+      }
+
+      const { data: insertedData, error } = await supabase.from('surat').insert(inserts).select();
       
       if (error) throw error;
       
-      const newSurat = insertedData?.[0];
-      const fullNomor = formatFullNomor(formData.kode_surat, newSurat?.nomor || nextNomor);
-      toast.success('Nomor surat berhasil dibuat!', {
-        description: `Nomor Lengkap: ${fullNomor}`,
-        duration: 5000,
-      });
-      setFormData({ 
-        perihal: '', 
-        kode_surat: '', 
-        tanggal: format(new Date(), 'yyyy-MM-dd'), 
-        tujuan: '', 
-        keterangan: '',
-        nomor: 0
-      });
+      if (jumlahSurat === 1) {
+        const newSurat = insertedData?.[0];
+        const fullNomor = formatFullNomor(newSurat?.kode_surat || letters[0].kode_surat, newSurat?.nomor || inserts[0].nomor);
+        toast.success('Nomor surat berhasil dibuat!', {
+          description: `Nomor Lengkap: ${fullNomor}`,
+          duration: 7000,
+        });
+      } else {
+        const detailNomor = insertedData?.map(s => formatFullNomor(s.kode_surat, s.nomor)).join(', ');
+        toast.success(`Berhasil menerbitkan ${jumlahSurat} nomor surat sekaligus!`, {
+          description: `Nomor diterbitkan: ${detailNomor}`,
+          duration: 12000,
+        });
+      }
+
+      // Reset Form ke awal
+      setLetters([
+        {
+          perihal: '',
+          kode_surat: '',
+          tanggal: format(new Date(), 'yyyy-MM-dd'),
+          tujuan: '',
+          keterangan: '',
+          nomor: 0
+        }
+      ]);
+      setJumlahSurat(1);
+      setActiveLetterTab(0);
       onSuccess();
     } catch (error: any) {
       toast.error('Gagal membuat nomor surat', { description: error.message });
@@ -913,98 +1032,207 @@ const FormAmbilNomor = ({ onSuccess }: { onSuccess: () => void }) => {
     }
   };
 
+  const activeLetter = letters[activeLetterTab] || letters[0];
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 30 }}
       animate={{ opacity: 1, y: 0 }}
-      className="max-w-3xl mx-auto"
+      className="max-w-4xl mx-auto"
     >
-      <div className="card card-gradient p-8 md:p-12 border-gold/30 shadow-2xl relative overflow-hidden">
+      <div className="card card-gradient p-6 md:p-10 border-gold/30 shadow-2xl relative overflow-hidden">
         <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-navy via-gold to-navy" />
         
-        <div className="mb-10 text-center">
+        <div className="mb-8 text-center">
           <div className="inline-flex p-4 bg-navy/5 rounded-3xl mb-4 border border-navy/10">
             <FilePlus className="w-10 h-10 text-gold" />
           </div>
           <h2 className="text-3xl font-black text-navy tracking-tight">Ambil Nomor Surat</h2>
-          <p className="text-slate-500 font-medium">Lengkapi formulir di bawah untuk mendapatkan nomor resmi</p>
+          <p className="text-slate-500 font-medium">Lengkapi formulir di bawah ini untuk menerbitkan nomor resmi baru</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-8">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div className="space-y-3">
-              <label className="text-sm font-black text-navy uppercase tracking-widest flex items-center gap-2">
-                <Tag className="w-4 h-4 text-gold" /> Kode Surat
-              </label>
+        {/* LANGKAH 1: TENTUKAN JUMLAH NOMOR */}
+        <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 mb-8 flex flex-col md:flex-row items-center justify-between gap-4">
+          <div>
+            <h3 className="text-sm font-black text-navy uppercase tracking-widest flex items-center gap-2">
+              <span className="px-2 py-1 bg-gold/10 text-gold-dark rounded-md text-xs font-black">LANGKAH 1</span>
+              Jumlah Nomor Yang Diambil
+            </h3>
+            <p className="text-xs text-slate-500 font-bold mt-1">
+              Petugas bisa menerbitkan sampai dengan 20 nomor sekaligus dengan isi yang berbeda-beda.
+            </p>
+          </div>
+          <div className="flex items-center gap-3 bg-white p-2 rounded-xl shadow-sm border border-slate-200">
+            <button
+              type="button"
+              onClick={() => handleJumlahChange(jumlahSurat - 1)}
+              className="w-8 h-8 rounded-lg bg-navy text-white hover:bg-navy-light flex items-center justify-center font-black text-lg transition-all"
+              disabled={jumlahSurat <= 1}
+            >
+              -
+            </button>
+            <span className="w-12 text-center font-black text-navy text-lg">{jumlahSurat}</span>
+            <button
+              type="button"
+              onClick={() => handleJumlahChange(jumlahSurat + 1)}
+              className="w-8 h-8 rounded-lg bg-navy text-white hover:bg-navy-light flex items-center justify-center font-black text-lg transition-all"
+              disabled={jumlahSurat >= 20}
+            >
+              +
+            </button>
+          </div>
+        </div>
+
+        {/* TABS SURAT INDIVIDUAL */}
+        {jumlahSurat > 1 && (
+          <div className="mb-6 space-y-3">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-black text-navy uppercase tracking-widest">
+                Isi Detail Untuk Setiap Surat:
+              </h4>
+              <button
+                type="button"
+                onClick={copyFirstToAll}
+                className="text-xs font-black text-gold-dark hover:text-navy uppercase tracking-wider flex items-center gap-1.5 transition-colors border border-gold/30 bg-gold/5 px-2.5 py-1.5 rounded-lg"
+              >
+                🪄 Salin Data Surat #1 ke Semua
+              </button>
+            </div>
+            
+            <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin">
+              {letters.map((_, idx) => {
+                const isFormFilled = letters[idx].kode_surat && letters[idx].perihal && letters[idx].tanggal;
+                return (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => setActiveLetterTab(idx)}
+                    className={cn(
+                      "px-4 py-2 text-xs font-black rounded-xl transition-all whitespace-nowrap flex items-center gap-2",
+                      activeLetterTab === idx
+                        ? "bg-navy text-white shadow-md border border-gold"
+                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    )}
+                  >
+                    <span>Surat #{idx + 1}</span>
+                    {isFormFilled && (
+                      <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* LANGKAH 2: FORM ISI SURAT AKTIF */}
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="p-6 bg-white border border-slate-200/80 rounded-2xl space-y-6">
+            {jumlahSurat > 1 && (
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <span className="text-xs font-black text-gold-dark uppercase tracking-widest bg-gold/10 px-2 py-1 rounded-md">
+                  Mengisi Form Surat ke-{activeLetterTab + 1} dari {jumlahSurat}
+                </span>
+                <span className="text-xs font-bold text-slate-400">
+                  Kolom Kode, Perihal & Tanggal wajib diisi
+                </span>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <label className="text-xs font-black text-navy uppercase tracking-widest flex items-center gap-2">
+                  <Tag className="w-3.5 h-3.5 text-gold" /> Kode Surat
+                </label>
+                <input
+                  required
+                  type="text"
+                  placeholder="Ketik kode surat, cth: W1.PAS.PAS.10"
+                  className="input-field py-3 font-mono font-bold text-sm"
+                  value={activeLetter.kode_surat}
+                  onChange={(e) => updateLetterField(activeLetterTab, 'kode_surat', e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-black text-navy uppercase tracking-widest flex items-center gap-2">
+                  <Calendar className="w-3.5 h-3.5 text-gold" /> Tanggal Surat
+                </label>
+                <input
+                  required
+                  type="date"
+                  className="input-field py-3 font-bold text-sm"
+                  value={activeLetter.tanggal}
+                  onChange={(e) => updateLetterField(activeLetterTab, 'tanggal', e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-black text-navy uppercase tracking-widest">Perihal</label>
               <input
                 required
                 type="text"
-                placeholder="W1.PAS.PAS.10..."
-                className="input-field py-4 font-mono font-bold"
-                value={formData.kode_surat}
-                onChange={(e) => setFormData({...formData, kode_surat: e.target.value})}
+                placeholder="cth: Permohonan Cuti Dinas / Pemindahan WBP"
+                className="input-field py-3 font-bold text-sm"
+                value={activeLetter.perihal}
+                onChange={(e) => updateLetterField(activeLetterTab, 'perihal', e.target.value)}
               />
             </div>
-            <div className="space-y-3">
-              <label className="text-sm font-black text-navy uppercase tracking-widest flex items-center gap-2">
-                <Calendar className="w-4 h-4 text-gold" /> Tanggal Surat
+
+            <div className="space-y-2">
+              <label className="text-xs font-black text-navy uppercase tracking-widest">
+                Tujuan Surat <span className="text-slate-400 font-bold lowercase">(opsional)</span>
               </label>
               <input
-                required
-                type="date"
-                className="input-field py-4 font-bold"
-                value={formData.tanggal}
-                onChange={(e) => setFormData({...formData, tanggal: e.target.value})}
+                type="text"
+                placeholder="cth: DITJENPAS ACEH"
+                className="input-field py-3 font-bold text-sm"
+                value={activeLetter.tujuan}
+                onChange={(e) => updateLetterField(activeLetterTab, 'tujuan', e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-black text-navy uppercase tracking-widest">Nama Pemohon / Keterangan</label>
+              <textarea
+                rows={3}
+                placeholder="cth: Bagian Kepegawaian / Nama Petugas Pemohon"
+                className="input-field py-3 font-medium text-sm resize-none"
+                value={activeLetter.keterangan}
+                onChange={(e) => updateLetterField(activeLetterTab, 'keterangan', e.target.value)}
               />
             </div>
           </div>
 
-          <div className="space-y-3">
-            <label className="text-sm font-black text-navy uppercase tracking-widest">Perihal</label>
-            <input
-              required
-              type="text"
-              placeholder="Contoh: Permohonan Cuti Tahunan"
-              className="input-field py-4 font-bold"
-              value={formData.perihal}
-              onChange={(e) => setFormData({...formData, perihal: e.target.value})}
-            />
-          </div>
-
-          <div className="space-y-3">
-            <label className="text-sm font-black text-navy uppercase tracking-widest">Tujuan Surat</label>
-            <input
-              required
-              type="text"
-              placeholder="Contoh: Kanwil Kemenimipas Aceh"
-              className="input-field py-4 font-bold"
-              value={formData.tujuan}
-              onChange={(e) => setFormData({...formData, tujuan: e.target.value})}
-            />
-          </div>
-
-          <div className="space-y-3">
-            <label className="text-sm font-black text-navy uppercase tracking-widest">Nama Pemohon</label>
-            <textarea
-              rows={4}
-              placeholder="Masukkan nama pemohon atau detail khusus jika ada..."
-              className="input-field py-4 font-medium resize-none"
-              value={formData.keterangan}
-              onChange={(e) => setFormData({...formData, keterangan: e.target.value})}
-            />
-          </div>
+          {/* SUMMARY REVIEW SEBELUM SUBMIT */}
+          {jumlahSurat > 1 && (
+            <div className="border border-slate-200 rounded-2xl p-5 bg-slate-50 space-y-3">
+              <h4 className="text-xs font-black text-navy uppercase tracking-widest flex items-center gap-1">
+                🔎 Ringkasan Penerbitan ({jumlahSurat} Nomor Berurutan)
+              </h4>
+              <div className="max-h-40 overflow-y-auto space-y-2 divide-y divide-slate-100 pr-2">
+                {letters.map((letter, idx) => (
+                  <div key={idx} className="pt-2 text-xs flex justify-between gap-4 font-bold">
+                    <span className="text-navy">Surat #{idx + 1} ({letter.kode_surat || 'Kode belum diisi'}):</span>
+                    <span className="text-slate-500 truncate max-w-xs">{letter.perihal || 'Perihal belum diisi'}</span>
+                    <span className="text-gold-dark truncate max-w-[150px]">{letter.tujuan || 'Tujuan belum diisi'}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           <button
             disabled={loading}
             type="submit"
-            className="w-full bg-gold hover:bg-gold-dark text-navy py-5 flex items-center justify-center gap-4 text-xl rounded-xl font-bold transition-all duration-300 disabled:opacity-70 shadow-lg"
+            className="w-full bg-gold hover:bg-gold-dark text-navy py-4.5 flex items-center justify-center gap-4 text-lg rounded-xl font-bold transition-all duration-300 disabled:opacity-75 shadow-lg"
           >
             {loading ? (
-              <Loader2 className="w-7 h-7 animate-spin" />
+              <Loader2 className="w-6 h-6 animate-spin" />
             ) : (
               <>
-                <Send className="w-6 h-6" />
-                SIMPAN & TERBITKAN NOMOR
+                <Send className="w-5 h-5" />
+                {jumlahSurat > 1 ? `TERBITKAN ${jumlahSurat} NOMOR SURAT SEKALIGUS` : 'TERBITKAN NOMOR SURAT'}
               </>
             )}
           </button>
