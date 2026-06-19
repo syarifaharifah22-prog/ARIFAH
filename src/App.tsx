@@ -855,6 +855,8 @@ const FormAmbilNomor = ({ onSuccess }: { onSuccess: () => void }) => {
   const [loading, setLoading] = useState(false);
   const [jumlahSurat, setJumlahSurat] = useState(1);
   const [activeLetterTab, setActiveLetterTab] = useState(0);
+  const [riwayatKode, setRiwayatKode] = useState<string[]>([]);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   
   const [letters, setLetters] = useState<SuratInsert[]>([
     {
@@ -866,6 +868,37 @@ const FormAmbilNomor = ({ onSuccess }: { onSuccess: () => void }) => {
       nomor: 0
     }
   ]);
+
+  useEffect(() => {
+    const fetchRiwayatKode = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('surat')
+          .select('kode_surat')
+          .order('id', { ascending: false })
+          .limit(300);
+        
+        if (error) throw error;
+        
+        if (data) {
+          const kodes = data.map(item => item.kode_surat.trim()).filter(Boolean);
+          const uniqueKodes = Array.from(new Set(kodes)).slice(0, 25);
+          setRiwayatKode(uniqueKodes);
+        }
+      } catch (err) {
+        console.error('Gagal mengambil riwayat kode:', err);
+      }
+    };
+    fetchRiwayatKode();
+  }, []);
+
+  const activeLetter = letters[activeLetterTab] || letters[0];
+
+  const filteredRiwayatKode = useMemo(() => {
+    const rawInput = activeLetter?.kode_surat?.trim().toLowerCase() || '';
+    if (!rawInput) return riwayatKode;
+    return riwayatKode.filter(k => k.toLowerCase().includes(rawInput));
+  }, [riwayatKode, activeLetter?.kode_surat]);
 
   const handleJumlahChange = (newCount: number) => {
     if (newCount < 1 || newCount > 20) return; // Batasi maksimal 20 nomor sekaligus demi performa
@@ -995,6 +1028,13 @@ const FormAmbilNomor = ({ onSuccess }: { onSuccess: () => void }) => {
       const { data: insertedData, error } = await supabase.from('surat').insert(inserts).select();
       
       if (error) throw error;
+
+      // Perbarui riwayat kode lokal agar langsung bisa digunakan
+      const newlyUsedKodes = inserts.map(i => i.kode_surat.trim()).filter(Boolean);
+      setRiwayatKode(prev => {
+        const combined = [...newlyUsedKodes, ...prev];
+        return Array.from(new Set(combined)).slice(0, 25);
+      });
       
       if (jumlahSurat === 1) {
         const newSurat = insertedData?.[0];
@@ -1031,8 +1071,6 @@ const FormAmbilNomor = ({ onSuccess }: { onSuccess: () => void }) => {
       setLoading(false);
     }
   };
-
-  const activeLetter = letters[activeLetterTab] || letters[0];
 
   return (
     <motion.div
@@ -1140,18 +1178,62 @@ const FormAmbilNomor = ({ onSuccess }: { onSuccess: () => void }) => {
             )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-2">
+              <div className="space-y-2 relative">
                 <label className="text-xs font-black text-navy uppercase tracking-widest flex items-center gap-2">
                   <Tag className="w-3.5 h-3.5 text-gold" /> Kode Surat
                 </label>
-                <input
-                  required
-                  type="text"
-                  placeholder="Ketik kode surat, cth: W1.PAS.PAS.10"
-                  className="input-field py-3 font-mono font-bold text-sm"
-                  value={activeLetter.kode_surat}
-                  onChange={(e) => updateLetterField(activeLetterTab, 'kode_surat', e.target.value)}
-                />
+                <div className="relative">
+                  <input
+                    required
+                    type="text"
+                    placeholder="Ketik kode surat, cth: W1.PAS.PAS.10"
+                    className="input-field py-3 font-mono font-bold text-sm pr-10 w-full"
+                    value={activeLetter.kode_surat}
+                    onChange={(e) => {
+                      updateLetterField(activeLetterTab, 'kode_surat', e.target.value);
+                      setIsDropdownOpen(true);
+                    }}
+                    onFocus={() => setIsDropdownOpen(true)}
+                    onBlur={() => {
+                      // Memberikan jeda kecil agar onMouseDown pada pilihan dropdown sempat dieksekusi sebelum dropdown tertutup
+                      setTimeout(() => setIsDropdownOpen(false), 200);
+                    }}
+                    autoComplete="off"
+                  />
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center pointer-events-none text-slate-400">
+                    <Search className="w-4 h-4" />
+                  </div>
+                </div>
+
+                {isDropdownOpen && filteredRiwayatKode.length > 0 && (
+                  <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-56 overflow-y-auto divide-y divide-slate-100">
+                    <div className="p-2 bg-slate-50 text-[10px] font-black text-navy uppercase tracking-widest flex items-center gap-1 border-b border-slate-100">
+                      <Clock className="w-3 h-3 text-gold" /> Riwayat Kode Terakhir:
+                    </div>
+                    {filteredRiwayatKode.map((kode) => (
+                      <button
+                        key={kode}
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault(); // Menghindari onBlur input menutupi dropdown sebelum klik terdaftar
+                          updateLetterField(activeLetterTab, 'kode_surat', kode);
+                          setIsDropdownOpen(false);
+                        }}
+                        className={cn(
+                          "w-full text-left px-4 py-2.5 text-xs font-mono font-bold transition-all flex items-center justify-between",
+                          activeLetter.kode_surat === kode
+                            ? "bg-gold/25 text-navy font-black"
+                            : "text-slate-600 hover:bg-gold/15 hover:text-navy"
+                        )}
+                      >
+                        <span>{kode}</span>
+                        {activeLetter.kode_surat === kode && (
+                          <span className="text-[9px] bg-gold text-navy px-1.5 py-0.5 rounded-md font-black">TERPILIH</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
               <div className="space-y-2">
                 <label className="text-xs font-black text-navy uppercase tracking-widest flex items-center gap-2">
