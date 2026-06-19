@@ -392,7 +392,7 @@ const StatsDashboard = ({ data }: { data: Surat[] }) => {
         </div>
         <div className="h-[300px] w-full">
           {data.length > 0 ? (
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
               <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <defs>
                   <linearGradient id="barNavy" x1="0" y1="0" x2="0" y2="1">
@@ -675,7 +675,7 @@ const RiwayatData = () => {
       <StatsDashboard data={suratList} />
 
       {/* Filters & Controls */}
-      <div className="card border-gold/20 bg-white/80 backdrop-blur-md sticky top-24 z-30">
+      <div className="card border-gold/20 bg-white sticky top-24 z-30 shadow-md">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* Search */}
           <div className="lg:col-span-4 relative">
@@ -779,12 +779,9 @@ const RiwayatData = () => {
                 ))
               ) : filteredAndSortedSurat.length > 0 ? (
                 filteredAndSortedSurat.map((surat) => (
-                  <motion.tr 
-                    layout
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
+                  <tr 
                     key={surat.id} 
-                    className="hover:bg-slate-50/80 transition-colors group"
+                    className="hover:bg-slate-50/80 transition-colors group border-b border-slate-100"
                   >
                     <td className="px-6 py-6">
                       <span className="font-black text-navy/40 text-xs">#{surat.nomor}</span>
@@ -831,7 +828,7 @@ const RiwayatData = () => {
                         </button>
                       </div>
                     </td>
-                  </motion.tr>
+                  </tr>
                 ))
               ) : (
                 <tr>
