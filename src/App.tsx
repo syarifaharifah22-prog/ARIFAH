@@ -40,6 +40,7 @@ import { Toaster, toast } from 'sonner';
 import { supabase } from './lib/supabase';
 import { cn, formatDate } from './lib/utils';
 import type { Surat, SuratInsert } from './types';
+import { CLASSIFICATIONS, ALL_CLASSIFICATIONS_FLAT } from './data/classifications';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
@@ -59,7 +60,7 @@ import {
 import { format, subDays, isWithinInterval, parseISO, getYear, startOfYear, endOfYear } from 'date-fns';
 
 const formatFullNomor = (kode: string, nomor: number | string) => {
-  const formattedNomor = String(nomor).padStart(2, '0');
+  const formattedNomor = String(nomor);
   // Jika kode diakhiri titik, hapus titiknya lalu tambah strip
   const cleanKode = kode.endsWith('.') ? kode.slice(0, -1) : kode;
   return `${cleanKode}-${formattedNomor}`;
@@ -516,7 +517,7 @@ const RiwayatData = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
-  const [sortConfig, setSortConfig] = useState<{ key: keyof Surat, direction: 'asc' | 'desc' }>({ key: 'nomor', direction: 'desc' });
+  const [sortConfig, setSortConfig] = useState<{ key: keyof Surat, direction: 'asc' | 'desc' }>({ key: 'created_at', direction: 'desc' });
 
   const fetchSurat = async () => {
     setLoading(true);
@@ -524,7 +525,7 @@ const RiwayatData = () => {
       const { data, error } = await supabase
         .from('surat')
         .select('*')
-        .order('nomor', { ascending: false });
+        .order('created_at', { ascending: false });
 
       if (error) throw error;
       setSuratList(data || []);
@@ -581,6 +582,22 @@ const RiwayatData = () => {
     return result;
   }, [suratList, searchTerm, dateRange, sortConfig]);
 
+  const groupedSurat = useMemo(() => {
+    const groups: { [key: string]: Surat[] } = {};
+    filteredAndSortedSurat.forEach(s => {
+      const key = s.kode_surat;
+      if (!groups[key]) {
+        groups[key] = [];
+      }
+      groups[key].push(s);
+    });
+    return groups;
+  }, [filteredAndSortedSurat]);
+
+  const groupKeys = useMemo(() => {
+    return Object.keys(groupedSurat).sort();
+  }, [groupedSurat]);
+
   const handleDelete = async (id: string) => {
     if (!confirm('Apakah Anda yakin ingin menghapus data ini?')) return;
     try {
@@ -597,77 +614,200 @@ const RiwayatData = () => {
     toast.info('Kode surat disalin ke clipboard');
   };
 
-  const exportToPDF = () => {
-    if (filteredAndSortedSurat.length === 0) {
-      toast.error('Tidak ada data untuk diekspor');
-      return;
-    }
+  const getClassificationName = (code: string) => {
+    const match = ALL_CLASSIFICATIONS_FLAT.find(item => item.fullCode === code || item.code === code);
+    return match ? match.name : 'Klasifikasi Umum / Kustom';
+  };
 
+  // State for customized classification export
+  const [selectedExportPrefix, setSelectedExportPrefix] = useState<string>('ALL');
+  const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
+  const [exportFormat, setExportFormat] = useState<'pdf' | 'excel'>('pdf');
+
+  const prefixNames: { [key: string]: string } = {
+    "ALL": "Semua Klasifikasi (Gabungan)",
+    "PK": "Pemasyarakatan (PK)",
+    "PR": "Perencanaan (PR)",
+    "KU": "Keuangan (KU)",
+    "OT": "Organisasi & Tata Laksana (OT)",
+    "SA": "SDM Aparatur (SA)",
+    "PB": "Barang Milik Negara / BMN (PB)",
+    "KS": "Kerja Sama (KS)",
+    "HK": "Hukum (HK)",
+    "UM": "Umum & Kearsipan (UM)",
+    "PW": "Pengawasan (PW)",
+    "TI": "Teknologi Informasi (TI)",
+    "Lainnya": "Klasifikasi Lainnya"
+  };
+
+  const getPrefixOfSurat = (kode: string) => {
+    const prefixes = ["PK", "PR", "KU", "OT", "SA", "PB", "KS", "HK", "UM", "PW", "TI"];
+    const found = prefixes.find(p => kode.includes(p));
+    if (found) return found;
+    const match = kode.split('.').find(part => part.length === 2 && /^[A-Z]{2}$/.test(part));
+    return match || "Lainnya";
+  };
+
+  const availablePrefixes = ["PR", "KU", "OT", "SA", "PB", "KS", "HK", "UM", "PW", "TI", "PK"];
+
+  const executePDFExport = (dataToExport: Surat[]) => {
     const doc = new jsPDF();
     
-    // Header
+    // First Page Cover / Header banner
     doc.setFillColor(10, 15, 44);
-    doc.rect(0, 0, 210, 30, 'F');
+    doc.rect(0, 0, 210, 35, 'F');
     
     doc.setTextColor(255, 255, 255);
-    doc.setFontSize(16);
+    doc.setFontSize(14);
     doc.setFont('helvetica', 'bold');
-    doc.text('RIWAYAT NOMOR SURAT - RUTAN SABANG', 105, 15, { align: 'center' });
+    
+    const scopeLabel = selectedExportPrefix === 'ALL' 
+      ? 'SEMUA DATA' 
+      : (prefixNames[selectedExportPrefix] || selectedExportPrefix).toUpperCase();
+    
+    doc.text('RIWAYAT NOMOR SURAT - RUTAN SABANG', 105, 13, { align: 'center' });
     
     doc.setTextColor(212, 175, 55);
     doc.setFontSize(10);
-    doc.text('Sistem Informasi Pengambilan Nomor Surat Khusus (SIPENSUS)', 105, 22, { align: 'center' });
+    doc.text(`EKSPOR DATA: ${scopeLabel}`, 105, 21, { align: 'center' });
+    doc.setFontSize(8);
+    doc.text('Sistem Informasi Pengambilan Nomor Surat Khusus (SIPENSUS)', 105, 27, { align: 'center' });
 
     doc.setTextColor(100);
     doc.setFontSize(9);
     doc.setFont('helvetica', 'normal');
-    doc.text(`Dicetak pada: ${format(new Date(), 'dd/MM/yyyy HH:mm')}`, 14, 38);
-    
-    const tableData = filteredAndSortedSurat.map(s => [
-      s.nomor,
-      formatFullNomor(s.kode_surat, s.nomor),
-      s.perihal,
-      formatDate(s.tanggal),
-      s.tujuan,
-      s.keterangan || '-'
-    ]);
+    doc.text(`Dicetak pada: ${format(new Date(), 'dd/MM/yyyy HH:mm')}`, 14, 43);
 
-    autoTable(doc, {
-      head: [['No.', 'Nomor Lengkap', 'Perihal', 'Tanggal', 'Tujuan', 'Pemohon']],
-      body: tableData,
-      startY: 42,
-      theme: 'grid',
-      headStyles: { fillColor: [10, 15, 44], textColor: [212, 175, 55], fontStyle: 'bold', halign: 'center' },
-      columnStyles: {
-        0: { halign: 'center', cellWidth: 15 },
-        1: { halign: 'center', cellWidth: 30 },
-        3: { halign: 'center', cellWidth: 25 }
-      },
-      alternateRowStyles: { fillColor: [245, 247, 250] },
-      styles: { fontSize: 9 }
+    // Grouping for printout
+    const activeGroupKeys = Array.from(new Set(dataToExport.map(s => s.kode_surat))).sort() as string[];
+
+    activeGroupKeys.forEach((kode, index) => {
+      const suratInGroup = dataToExport.filter(s => s.kode_surat === kode);
+      const namaKlasifikasi = getClassificationName(kode);
+      
+      if (index > 0) {
+        doc.addPage();
+      }
+      
+      let currentY = index === 0 ? 48 : 20;
+      
+      doc.setFillColor(10, 15, 44);
+      doc.rect(0, currentY - 10, 210, 12, 'F');
+      
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'bold');
+      doc.text(`KLASIFIKASI: ${kode}`, 14, currentY - 5);
+      
+      doc.setFontSize(8);
+      doc.setTextColor(212, 175, 55);
+      const nameText = namaKlasifikasi.length > 55 ? namaKlasifikasi.slice(0, 55) + '...' : namaKlasifikasi;
+      doc.text(nameText.toUpperCase(), 196, currentY - 5, { align: 'right' });
+      
+      const tableData = suratInGroup.map(s => [
+        s.nomor,
+        formatFullNomor(s.kode_surat, s.nomor),
+        s.perihal,
+        formatDate(s.tanggal),
+        s.tujuan || '-',
+        s.keterangan || '-'
+      ]);
+
+      autoTable(doc, {
+        head: [['No.', 'Nomor Lengkap', 'Perihal', 'Tanggal', 'Tujuan', 'Pemohon']],
+        body: tableData,
+        startY: currentY + 6,
+        theme: 'grid',
+        headStyles: { fillColor: [10, 15, 44], textColor: [212, 175, 55], fontStyle: 'bold', halign: 'center' },
+        columnStyles: {
+          0: { halign: 'center', cellWidth: 15 },
+          1: { halign: 'center', cellWidth: 35 },
+          3: { halign: 'center', cellWidth: 25 }
+        },
+        alternateRowStyles: { fillColor: [245, 247, 250] },
+        styles: { fontSize: 9 }
+      });
     });
 
-    doc.save(`Riwayat_Surat_${format(new Date(), 'yyyyMMdd_HHmm')}.pdf`);
-    toast.success('Riwayat PDF berhasil diunduh');
+    const fileSuffix = selectedExportPrefix === 'ALL' ? 'Semua' : selectedExportPrefix;
+    doc.save(`Riwayat_Surat_${fileSuffix}_${format(new Date(), 'yyyyMMdd_HHmm')}.pdf`);
+    toast.success(`PDF ${scopeLabel} berhasil diunduh`);
   };
 
-  const exportToExcel = () => {
-    if (filteredAndSortedSurat.length === 0) {
-      toast.error('Tidak ada data untuk diekspor');
-      return;
-    }
-    const ws = XLSX.utils.json_to_sheet(filteredAndSortedSurat.map(s => ({
+  const executeExcelExport = (dataToExport: Surat[]) => {
+    const wb = XLSX.utils.book_new();
+
+    const scopeLabel = selectedExportPrefix === 'ALL' 
+      ? 'Semua' 
+      : selectedExportPrefix;
+
+    // 1. Sheet "Semua Surat" (Filtered or all)
+    const wsAll = XLSX.utils.json_to_sheet(dataToExport.map(s => ({
       'No.': s.nomor,
       'Nomor Lengkap': formatFullNomor(s.kode_surat, s.nomor),
       'Perihal': s.perihal,
       'Tanggal': s.tanggal,
-      'Tujuan': s.tujuan,
-      'Pemohon': s.keterangan,
-      'Dibuat Pada': s.created_at
+      'Tujuan': s.tujuan || '-',
+      'Pemohon': s.keterangan || '-',
+      'Dibuat Pada': s.created_at ? format(parseISO(s.created_at), 'dd/MM/yyyy HH:mm') : '-'
     })));
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Surat");
-    XLSX.writeFile(wb, `Riwayat_Surat_${format(new Date(), 'yyyyMMdd_HHmm')}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, wsAll, `Data Surat ${scopeLabel}`);
+
+    // 2. Separate Sheets per Classification inside the selected group
+    const activeGroupKeys = Array.from(new Set(dataToExport.map(s => s.kode_surat))).sort() as string[];
+    const seenNames = new Set<string>();
+    seenNames.add(`Data Surat ${scopeLabel}`);
+
+    activeGroupKeys.forEach(kode => {
+      const suratInGroup = dataToExport.filter(s => s.kode_surat === kode);
+      
+      let sheetName = kode.replace(/[\\/?*\[\]:]/g, '').trim();
+      if (sheetName.length > 30) {
+        sheetName = sheetName.slice(0, 30);
+      }
+      if (!sheetName) sheetName = "Klasifikasi";
+      
+      let count = 1;
+      let finalSheetName = sheetName;
+      while (seenNames.has(finalSheetName)) {
+        finalSheetName = `${sheetName.slice(0, 26)} (${count})`;
+        count++;
+      }
+      seenNames.add(finalSheetName);
+
+      const wsGroup = XLSX.utils.json_to_sheet(suratInGroup.map(s => ({
+        'No.': s.nomor,
+        'Nomor Lengkap': formatFullNomor(s.kode_surat, s.nomor),
+        'Perihal': s.perihal,
+        'Tanggal': s.tanggal,
+        'Tujuan': s.tujuan || '-',
+        'Pemohon': s.keterangan || '-'
+      })));
+
+      XLSX.utils.book_append_sheet(wb, wsGroup, finalSheetName);
+    });
+
+    XLSX.writeFile(wb, `Riwayat_Surat_${scopeLabel}_${format(new Date(), 'yyyyMMdd_HHmm')}.xlsx`);
+    toast.success(`Excel ${scopeLabel} berhasil diunduh`);
+  };
+
+  const handleExport = () => {
+    const dataToExport = selectedExportPrefix === 'ALL' 
+      ? filteredAndSortedSurat 
+      : filteredAndSortedSurat.filter(s => getPrefixOfSurat(s.kode_surat) === selectedExportPrefix);
+
+    if (dataToExport.length === 0) {
+      toast.error(`Tidak ada data untuk klasifikasi ${selectedExportPrefix} yang sesuai filter saat ini`);
+      return;
+    }
+
+    if (exportFormat === 'pdf') {
+      executePDFExport(dataToExport);
+    } else {
+      executeExcelExport(dataToExport);
+    }
+    
+    setIsExportModalOpen(false);
   };
 
   return (
@@ -722,10 +862,10 @@ const RiwayatData = () => {
                 setSortConfig({ key, direction });
               }}
             >
-              <option value="nomor-desc">Nomor Terbesar</option>
-              <option value="nomor-asc">Nomor Terkecil</option>
               <option value="created_at-desc">Terbaru</option>
               <option value="created_at-asc">Terlama</option>
+              <option value="nomor-desc">Nomor Terbesar</option>
+              <option value="nomor-asc">Nomor Terkecil</option>
               <option value="kode_surat-asc">Kode (A-Z)</option>
               <option value="kode_surat-desc">Kode (Z-A)</option>
             </select>
@@ -734,16 +874,24 @@ const RiwayatData = () => {
               <motion.button 
                 whileHover={{ scale: 1.05, y: -2 }}
                 whileTap={{ scale: 0.95 }}
-                onClick={exportToPDF} 
+                onClick={() => {
+                  setExportFormat('pdf');
+                  setIsExportModalOpen(true);
+                }} 
                 className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-all shadow-lg shadow-red-200 border border-red-500/20 font-bold text-xs"
+                title="Unduh PDF Berdasarkan Klasifikasi"
               >
                 <FileDown className="w-4 h-4" /> PDF
               </motion.button>
               <motion.button 
                 whileHover={{ scale: 1.05, y: -2 }}
                 whileTap={{ scale: 0.95 }}
-                onClick={exportToExcel} 
+                onClick={() => {
+                  setExportFormat('excel');
+                  setIsExportModalOpen(true);
+                }} 
                 className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-all shadow-lg shadow-green-200 border border-green-500/20 font-bold text-xs"
+                title="Unduh Excel Berdasarkan Klasifikasi"
               >
                 <FileSpreadsheet className="w-4 h-4" /> EXCEL
               </motion.button>
@@ -752,33 +900,48 @@ const RiwayatData = () => {
         </div>
       </div>
 
-      {/* Table Section */}
-      <div className="card p-0 overflow-hidden border-gold/20 shadow-xl">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-navy text-white">
-                <th className="px-6 py-5 font-black text-xs uppercase tracking-widest text-gold">No.</th>
-                <th className="px-6 py-5 font-black text-xs uppercase tracking-widest text-gold">Nomor Lengkap</th>
-                <th className="px-6 py-5 font-black text-xs uppercase tracking-widest text-gold">Perihal</th>
-                <th className="px-6 py-5 font-black text-xs uppercase tracking-widest text-gold">Tanggal</th>
-                <th className="px-6 py-5 font-black text-xs uppercase tracking-widest text-gold">Tujuan</th>
-                <th className="px-6 py-5 font-black text-xs uppercase tracking-widest text-gold text-center">Aksi</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {loading ? (
-                Array.from({ length: 5 }).map((_, i) => (
-                  <tr key={i} className="animate-pulse">
-                    {Array.from({ length: 6 }).map((_, j) => (
-                      <td key={j} className="px-6 py-6">
-                        <div className="h-4 bg-slate-100 rounded w-full" />
-                      </td>
-                    ))}
-                  </tr>
-                ))
-              ) : filteredAndSortedSurat.length > 0 ? (
-                filteredAndSortedSurat.map((surat) => (
+      {/* Table Section Unified */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="text-xs text-slate-400 font-bold">
+          Menampilkan {filteredAndSortedSurat.length} surat dari {suratList.length} total data
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="space-y-6">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="card p-0 overflow-hidden border-gold/20 shadow-xl animate-pulse">
+              <div className="h-16 bg-navy/10 w-full" />
+              <div className="p-6 space-y-4">
+                <div className="h-4 bg-slate-100 rounded w-1/4" />
+                <div className="h-4 bg-slate-100 rounded w-3/4" />
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : filteredAndSortedSurat.length === 0 ? (
+        <div className="card py-20 text-center border-gold/20 shadow-xl bg-white">
+          <div className="flex flex-col items-center gap-3 text-slate-400">
+            <Search className="w-12 h-12 opacity-20" />
+            <p className="font-bold">Tidak ada data yang sesuai dengan filter.</p>
+          </div>
+        </div>
+      ) : (
+        <div className="card p-0 overflow-hidden border-gold/20 shadow-xl bg-white">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-navy text-white">
+                  <th className="px-6 py-5 font-black text-xs uppercase tracking-widest text-gold">No.</th>
+                  <th className="px-6 py-5 font-black text-xs uppercase tracking-widest text-gold">Nomor Lengkap</th>
+                  <th className="px-6 py-5 font-black text-xs uppercase tracking-widest text-gold">Perihal</th>
+                  <th className="px-6 py-5 font-black text-xs uppercase tracking-widest text-gold">Tanggal</th>
+                  <th className="px-6 py-5 font-black text-xs uppercase tracking-widest text-gold">Tujuan</th>
+                  <th className="px-6 py-5 font-black text-xs uppercase tracking-widest text-gold text-center">Aksi</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredAndSortedSurat.map((surat) => (
                   <tr 
                     key={surat.id} 
                     className="hover:bg-slate-50/80 transition-colors group border-b border-slate-100"
@@ -795,7 +958,7 @@ const RiwayatData = () => {
                           <span className="font-mono text-sm font-black text-navy">{formatFullNomor(surat.kode_surat, surat.nomor)}</span>
                           <button 
                             onClick={() => handleCopy(formatFullNomor(surat.kode_surat, surat.nomor))} 
-                            className="text-[10px] text-gold-dark font-bold hover:underline flex items-center gap-1"
+                            className="text-[10px] text-gold-dark font-bold hover:underline flex items-center gap-1 w-max"
                           >
                             <Copy className="w-2.5 h-2.5" /> Salin Kode
                           </button>
@@ -814,7 +977,7 @@ const RiwayatData = () => {
                     </td>
                     <td className="px-6 py-6">
                       <span className="inline-flex items-center px-3 py-1 rounded-full bg-navy/5 text-navy text-[11px] font-black border border-navy/10 uppercase">
-                        {surat.tujuan}
+                        {surat.tujuan || '-'}
                       </span>
                     </td>
                     <td className="px-6 py-6">
@@ -829,21 +992,113 @@ const RiwayatData = () => {
                       </div>
                     </td>
                   </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={6} className="px-6 py-20 text-center">
-                    <div className="flex flex-col items-center gap-3 text-slate-400">
-                      <Search className="w-12 h-12 opacity-20" />
-                      <p className="font-bold">Tidak ada data yang sesuai dengan filter.</p>
-                    </div>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* Export Selection Modal */}
+      <AnimatePresence>
+        {isExportModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            {/* Backdrop */}
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsExportModalOpen(false)}
+              className="absolute inset-0 bg-navy/60 backdrop-blur-sm"
+            />
+            
+            {/* Modal Body */}
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl border border-gold/30 overflow-hidden z-10 text-left"
+            >
+              {/* Header */}
+              <div className="bg-navy p-6 text-white border-b border-gold/20 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-gold/10 rounded-xl border border-gold/30">
+                    <FileDown className="w-6 h-6 text-gold" />
+                  </div>
+                  <div>
+                    <h3 className="font-black text-lg text-white">Unduh Riwayat Surat</h3>
+                    <p className="text-[11px] text-slate-300 font-bold tracking-wider uppercase font-mono">Format: {exportFormat.toUpperCase()}</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setIsExportModalOpen(false)}
+                  className="text-slate-300 hover:text-white font-black text-lg p-2"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Content */}
+              <div className="p-6 space-y-6">
+                <div>
+                  <label className="block text-xs font-black text-navy uppercase tracking-widest mb-2">
+                    Pilih Klasifikasi Kode Surat
+                  </label>
+                  <p className="text-xs text-slate-500 font-bold mb-3 leading-relaxed">
+                    Pilih apakah Anda ingin mengunduh semua data atau hanya klasifikasi kode tertentu (seperti KU, UM, TI, PK, dll.).
+                  </p>
+                  
+                  <div className="space-y-3">
+                    <select
+                      value={selectedExportPrefix}
+                      onChange={(e) => setSelectedExportPrefix(e.target.value)}
+                      className="input-field font-bold text-sm w-full py-3"
+                    >
+                      <option value="ALL">✨ {prefixNames["ALL"]}</option>
+                      {availablePrefixes.map((prefix) => (
+                        <option key={prefix} value={prefix}>
+                          📁 {prefixNames[prefix] || `Klasifikasi ${prefix}`}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex items-start gap-3">
+                  <div className="w-5 h-5 rounded-full bg-gold/15 flex items-center justify-center text-gold-dark font-black text-xs shrink-0 mt-0.5">
+                    i
+                  </div>
+                  <div className="text-[11px] text-slate-500 font-bold leading-normal">
+                    Dokumen yang diunduh akan secara otomatis menyertakan filter pencarian dan rentang tanggal yang saat ini sedang Anda aktifkan pada tabel riwayat.
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="bg-slate-50 p-6 border-t border-slate-100 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsExportModalOpen(false)}
+                  className="px-5 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-black uppercase tracking-wider transition-colors"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExport}
+                  className={cn(
+                    "px-6 py-2.5 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-2",
+                    exportFormat === 'pdf' ? "bg-red-600 hover:bg-red-700" : "bg-green-600 hover:bg-green-700"
+                  )}
+                >
+                  {exportFormat === 'pdf' ? <FileDown className="w-4 h-4" /> : <FileSpreadsheet className="w-4 h-4" />}
+                  Unduh {exportFormat.toUpperCase()}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
@@ -896,6 +1151,16 @@ const FormAmbilNomor = ({ onSuccess }: { onSuccess: () => void }) => {
     if (!rawInput) return riwayatKode;
     return riwayatKode.filter(k => k.toLowerCase().includes(rawInput));
   }, [riwayatKode, activeLetter?.kode_surat]);
+
+  const filteredClassifications = useMemo(() => {
+    const rawInput = activeLetter?.kode_surat?.trim().toLowerCase() || '';
+    if (!rawInput) return ALL_CLASSIFICATIONS_FLAT.slice(0, 30);
+    return ALL_CLASSIFICATIONS_FLAT.filter(item => 
+      item.code.toLowerCase().includes(rawInput) ||
+      item.fullCode.toLowerCase().includes(rawInput) ||
+      item.name.toLowerCase().includes(rawInput)
+    ).slice(0, 55);
+  }, [activeLetter?.kode_surat]);
 
   const handleJumlahChange = (newCount: number) => {
     if (newCount < 1 || newCount > 20) return; // Batasi maksimal 20 nomor sekaligus demi performa
@@ -984,13 +1249,15 @@ const FormAmbilNomor = ({ onSuccess }: { onSuccess: () => void }) => {
 
     setLoading(true);
     try {
-      // Kelompokkan surat berdasarkan tahun untuk menghitung nomor urut agar kuat & presisi
-      const lastNomorByYear: { [year: number]: number } = {};
+      // Kelompokkan surat berdasarkan kode dan tahun untuk menghitung nomor urut secara presisi
+      const lastNomorByCodeAndYear: { [key: string]: number } = {};
 
-      const getNextNomorForYear = async (year: number) => {
-        if (lastNomorByYear[year] !== undefined) {
-          lastNomorByYear[year]++;
-          return lastNomorByYear[year];
+      const getNextNomorForCodeAndYear = async (kode_surat: string, year: number) => {
+        const cleanCode = kode_surat.trim();
+        const key = `${cleanCode}_${year}`;
+        if (lastNomorByCodeAndYear[key] !== undefined) {
+          lastNomorByCodeAndYear[key]++;
+          return lastNomorByCodeAndYear[key];
         }
 
         const startDate = `${year}-01-01`;
@@ -999,6 +1266,7 @@ const FormAmbilNomor = ({ onSuccess }: { onSuccess: () => void }) => {
         const { data: lastSurat, error: fetchError } = await supabase
           .from('surat')
           .select('nomor')
+          .eq('kode_surat', cleanCode)
           .gte('tanggal', startDate)
           .lte('tanggal', endDate)
           .order('nomor', { ascending: false })
@@ -1007,7 +1275,7 @@ const FormAmbilNomor = ({ onSuccess }: { onSuccess: () => void }) => {
         if (fetchError) throw fetchError;
 
         const nextNomor = lastSurat && lastSurat.length > 0 ? lastSurat[0].nomor + 1 : 1;
-        lastNomorByYear[year] = nextNomor;
+        lastNomorByCodeAndYear[key] = nextNomor;
         return nextNomor;
       };
 
@@ -1015,7 +1283,7 @@ const FormAmbilNomor = ({ onSuccess }: { onSuccess: () => void }) => {
       const inserts: SuratInsert[] = [];
       for (const letter of letters) {
         const year = getYear(parseISO(letter.tanggal));
-        const seq = await getNextNomorForYear(year);
+        const seq = await getNextNomorForCodeAndYear(letter.kode_surat, year);
         inserts.push({
           ...letter,
           nomor: seq
@@ -1183,7 +1451,7 @@ const FormAmbilNomor = ({ onSuccess }: { onSuccess: () => void }) => {
                   <input
                     required
                     type="text"
-                    placeholder="Ketik kode surat, cth: W1.PAS.PAS.10"
+                    placeholder="Cari kode atau nama, cth: PK.02.01 / Tahanan"
                     className="input-field py-3 font-mono font-bold text-sm pr-10 w-full"
                     value={activeLetter.kode_surat}
                     onChange={(e) => {
@@ -1202,33 +1470,48 @@ const FormAmbilNomor = ({ onSuccess }: { onSuccess: () => void }) => {
                   </div>
                 </div>
 
-                {isDropdownOpen && filteredRiwayatKode.length > 0 && (
-                  <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-56 overflow-y-auto divide-y divide-slate-100">
-                    <div className="p-2 bg-slate-50 text-[10px] font-black text-navy uppercase tracking-widest flex items-center gap-1 border-b border-slate-100">
-                      <Clock className="w-3 h-3 text-gold" /> Riwayat Kode Terakhir:
+                {isDropdownOpen && (
+                  <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-72 overflow-y-auto divide-y divide-slate-100">
+                    <div className="bg-white">
+                      <div className="p-2 bg-slate-50 text-[10px] font-black text-navy uppercase tracking-widest flex items-center gap-1 border-b border-slate-100 sticky top-0 z-10">
+                        <Tag className="w-3 h-3 text-gold" /> Kamus Klasifikasi Resmi:
+                      </div>
+                      {filteredClassifications.length > 0 ? (
+                        filteredClassifications.map((item) => (
+                          <button
+                            key={item.fullCode}
+                            type="button"
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              updateLetterField(activeLetterTab, 'kode_surat', item.fullCode);
+                              setIsDropdownOpen(false);
+                            }}
+                            className={cn(
+                              "w-full text-left px-4 py-3 transition-all flex flex-col gap-1 border-b border-slate-50",
+                              activeLetter.kode_surat === item.fullCode
+                                ? "bg-gold/25 text-navy"
+                                : "hover:bg-gold/15"
+                            )}
+                          >
+                            <div className="flex justify-between items-center w-full">
+                              <span className="font-mono font-black text-xs text-navy leading-none">
+                                {item.fullCode}
+                              </span>
+                              <span className="text-[9px] text-slate-400 font-bold tracking-wider">
+                                {item.code}
+                              </span>
+                            </div>
+                            <span className="text-slate-500 font-bold text-xs leading-tight">
+                              {item.name}
+                            </span>
+                          </button>
+                        ))
+                      ) : (
+                        <div className="p-4 text-center text-xs text-slate-400 font-bold">
+                          Tidak ada klasifikasi resmi yang cocok. Anda dapat mengetik kode kustom Anda sendiri.
+                        </div>
+                      )}
                     </div>
-                    {filteredRiwayatKode.map((kode) => (
-                      <button
-                        key={kode}
-                        type="button"
-                        onMouseDown={(e) => {
-                          e.preventDefault(); // Menghindari onBlur input menutupi dropdown sebelum klik terdaftar
-                          updateLetterField(activeLetterTab, 'kode_surat', kode);
-                          setIsDropdownOpen(false);
-                        }}
-                        className={cn(
-                          "w-full text-left px-4 py-2.5 text-xs font-mono font-bold transition-all flex items-center justify-between",
-                          activeLetter.kode_surat === kode
-                            ? "bg-gold/25 text-navy font-black"
-                            : "text-slate-600 hover:bg-gold/15 hover:text-navy"
-                        )}
-                      >
-                        <span>{kode}</span>
-                        {activeLetter.kode_surat === kode && (
-                          <span className="text-[9px] bg-gold text-navy px-1.5 py-0.5 rounded-md font-black">TERPILIH</span>
-                        )}
-                      </button>
-                    ))}
                   </div>
                 )}
               </div>
