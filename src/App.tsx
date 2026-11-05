@@ -59,10 +59,125 @@ import {
 } from 'recharts';
 import { format, subDays, isWithinInterval, parseISO, getYear, startOfYear, endOfYear } from 'date-fns';
 
-const formatFullNomor = (kode: string, nomor: number | string) => {
-  const formattedNomor = String(nomor);
-  // Jika kode diakhiri titik, hapus titiknya lalu tambah strip
-  const cleanKode = kode.endsWith('.') ? kode.slice(0, -1) : kode;
+export const JENIS_NASKAH_LIST = [
+  'Surat Dinas',
+  'Nota Dinas',
+  'Surat Perintah',
+  'Surat Edaran',
+  'Surat Keputusan',
+  'Surat Undangan',
+  'Surat Keterangan',
+  'Laporan',
+  'Notula Rapat'
+] as const;
+
+export type JenisNaskah = typeof JENIS_NASKAH_LIST[number];
+
+export const cleanKeterangan = (keterangan?: string): string => {
+  if (!keterangan) return '';
+  return keterangan.replace(/^\[[a-zA-Z\s]+\]\s*/, '').trim();
+};
+
+export const extractJenisNaskah = (surat: { keterangan?: string; perihal?: string; jenis_naskah?: string }): string => {
+  if (surat.jenis_naskah) return surat.jenis_naskah;
+  const ket = surat.keterangan || '';
+  const tagMatch = ket.match(/^\[([a-zA-Z\s]+)\]/);
+  if (tagMatch) {
+    const found = JENIS_NASKAH_LIST.find(j => j.toLowerCase() === tagMatch[1].trim().toLowerCase());
+    if (found) return found;
+  }
+  
+  const perihal = (surat.perihal || '').toLowerCase();
+  if (perihal.includes('surat perintah') || perihal.startsWith('sprint') || perihal.startsWith('sp.')) {
+    return 'Surat Perintah';
+  }
+  if (perihal.includes('surat edaran') || perihal.startsWith('se.')) {
+    return 'Surat Edaran';
+  }
+  if (perihal.includes('surat keterangan') || perihal.startsWith('sket')) {
+    return 'Surat Keterangan';
+  }
+  if (perihal.includes('surat keputusan') || perihal.startsWith('sk.')) {
+    return 'Surat Keputusan';
+  }
+  if (perihal.includes('nota dinas') || perihal.startsWith('nd.')) {
+    return 'Nota Dinas';
+  }
+  if (perihal.includes('notula') || perihal.includes('notulen')) {
+    return 'Notula Rapat';
+  }
+  if (perihal.includes('laporan')) {
+    return 'Laporan';
+  }
+  if (perihal.includes('undangan')) {
+    return 'Surat Undangan';
+  }
+
+  return 'Surat Dinas';
+};
+
+const formatFullNomor = (
+  kode: string, 
+  nomor: number | string, 
+  tanggal?: string | Date | null,
+  jenis?: string
+) => {
+  if (!kode) return String(nomor);
+  const formattedNomor = String(nomor).trim();
+  const cleanKode = kode.trim().replace(/[./\-]+$/, '');
+
+  // Jika kode mengandung '/' berarti ini data baru (format naskah baru)
+  if (cleanKode.includes('/')) {
+    let unitSatker = 'WP.1.PAS.8';
+    let klasifikasi = cleanKode;
+
+    const unitMatch = cleanKode.match(/^(WP\.\w+\.PAS\.\w+)[./](.+)$/i);
+    if (unitMatch) {
+      unitSatker = unitMatch[1];
+      klasifikasi = unitMatch[2].replace(/^[./]+/, '');
+    } else if (/^WP\.\w+\.PAS\.\w+$/i.test(cleanKode)) {
+      unitSatker = cleanKode;
+      klasifikasi = '';
+    }
+
+    klasifikasi = klasifikasi.replace(/^[./]+|[./]+$/g, '');
+
+    // KHUSUS SURAT PERINTAH: WP.1.PAS.8/klasifikasi/no surat (Cuma ini yg beda, TIDAK PAKAI TAHUN)
+    const isSuratPerintah = (jenis || '').toLowerCase().trim() === 'surat perintah';
+    if (isSuratPerintah) {
+      if (klasifikasi) {
+        return `${unitSatker}/${klasifikasi}/${formattedNomor}`;
+      }
+      return `${unitSatker}/${formattedNomor}`;
+    }
+
+    // JENIS NASKAH LAINNYA: WP.1.PAS.8/klasifikasi/no surat/tahun
+    let tahun = '2026';
+    if (tanggal) {
+      if (tanggal instanceof Date && !isNaN(tanggal.getTime())) {
+        tahun = String(tanggal.getFullYear());
+      } else {
+        const str = String(tanggal).trim();
+        const match = str.match(/\b(20\d\d)\b/);
+        if (match) {
+          tahun = match[1];
+        } else {
+          const d = new Date(str);
+          if (!isNaN(d.getTime())) tahun = String(d.getFullYear());
+        }
+      }
+    } else {
+      tahun = String(new Date().getFullYear());
+    }
+
+    if (klasifikasi) {
+      return `${unitSatker}/${klasifikasi}/${formattedNomor}/${tahun}`;
+    }
+    return `${unitSatker}/${formattedNomor}/${tahun}`;
+  }
+
+  // Jika kode TIDAK mengandung '/' (semua data lama yang sudah tersimpan sebelumnya):
+  // Format lama tetap dipertahankan persis seperti semula: WP.1.PAS.8.PK.09.02-21
   return `${cleanKode}-${formattedNomor}`;
 };
 
@@ -70,6 +185,13 @@ const formatFullNomor = (kode: string, nomor: number | string) => {
 
 const Navbar = ({ activeTab, setActiveTab }: { activeTab: string, setActiveTab: (tab: string) => void }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [isPedomanOpen, setIsPedomanOpen] = useState(false);
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   const navItems = [
     { id: 'beranda', label: 'Beranda', icon: Home },
@@ -77,93 +199,345 @@ const Navbar = ({ activeTab, setActiveTab }: { activeTab: string, setActiveTab: 
     { id: 'riwayat', label: 'Riwayat & Statistik', icon: History },
   ];
 
-  return (
-    <nav className="fixed top-0 left-0 right-0 z-50 nav-gradient text-white border-b border-gold/20 shadow-lg">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16 md:h-20">
-          <div className="flex items-center gap-3">
-            <motion.div 
-              whileHover={{ rotate: 360 }}
-              transition={{ duration: 0.5 }}
-              className="rounded-full shadow-gold/20 shadow-lg flex items-center justify-center w-12 h-12 md:w-16 md:h-16 overflow-hidden"
-            >
-              <img 
-                src="https://iili.io/B1rLqTN.md.png" 
-                alt="Logo Rutan Sabang" 
-                className="w-full h-full object-cover"
-                referrerPolicy="no-referrer"
-              />
-            </motion.div>
-            <div className="flex flex-col">
-              <span className="font-black text-sm md:text-xl tracking-tighter leading-none">SIPENSUS</span>
-              <span className="text-[10px] md:text-xs text-gold font-bold tracking-widest uppercase">Rutan Sabang</span>
-            </div>
-          </div>
-          
-          {/* Desktop Nav */}
-          <div className="hidden md:flex items-center gap-2">
-            {navItems.map((item) => (
-              <button
-                key={item.id}
-                onClick={() => setActiveTab(item.id)}
-                className={cn(
-                  "flex items-center gap-2 px-5 py-2.5 rounded-xl transition-all duration-300 font-bold text-sm",
-                  activeTab === item.id 
-                    ? "bg-gold text-navy shadow-lg shadow-gold/20" 
-                    : "text-white/80 hover:text-white hover:bg-white/10"
-                )}
-              >
-                <item.icon className="w-4 h-4" />
-                {item.label}
-              </button>
-            ))}
-          </div>
+  // Format tanggal & jam Indonesia
+  const dateFormatted = new Intl.DateTimeFormat('id-ID', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric'
+  }).format(currentTime);
 
-          {/* Mobile Menu Button */}
-          <div className="md:hidden">
-            <button 
-              onClick={() => setIsOpen(!isOpen)} 
-              className="p-2 text-gold hover:bg-white/10 rounded-lg transition-colors"
-            >
-              {isOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-            </button>
+  const hours = String(currentTime.getHours()).padStart(2, '0');
+  const minutes = String(currentTime.getMinutes()).padStart(2, '0');
+  const seconds = String(currentTime.getSeconds()).padStart(2, '0');
+
+  return (
+    <>
+      <nav className="fixed top-0 left-0 right-0 z-50 shadow-2xl">
+        {/* SUB-HEADER ATAS: Identitas Lembaga & Jam Live */}
+        <div className="bg-[#060a1e] text-white/80 border-b border-gold/15 py-1 px-4 text-[11px] font-bold">
+          <div className="max-w-7xl mx-auto flex items-center justify-between">
+            {/* Kiri: Identitas Resmi Kemenkumham / Ditjenpas */}
+            <div className="flex items-center gap-2 md:gap-3 truncate">
+              <span className="flex items-center gap-1.5 text-gold font-black uppercase tracking-wider text-[10px]">
+                <ShieldCheck className="w-3.5 h-3.5 text-gold shrink-0" />
+                <span className="hidden sm:inline">Kemenimipas RI •</span> Ditjen Pemasyarakatan
+              </span>
+              <span className="text-white/20 hidden md:inline">•</span>
+              <span className="text-slate-300 hidden md:inline">Kanwil Aceh</span>
+              <span className="text-white/20 hidden lg:inline">•</span>
+              <span className="bg-gold/15 text-gold px-2 py-0.5 rounded-full text-[9px] font-mono font-black border border-gold/30 tracking-wider hidden lg:inline-flex items-center gap-1">
+                KODE SATKER: WP.1.PAS.8
+              </span>
+            </div>
+
+            {/* Kanan: Jam Real-Time Digital & Status Live */}
+            <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
+              <div className="hidden sm:flex items-center gap-1.5 text-slate-300">
+                <Calendar className="w-3 h-3 text-gold/80" />
+                <span className="font-medium">{dateFormatted}</span>
+              </div>
+              <span className="text-white/20 hidden sm:inline">•</span>
+              
+              {/* Jam Digital Bergaya Modern & Elegan */}
+              <div className="flex items-center gap-2 bg-[#020512]/90 border border-gold/30 px-2.5 py-0.5 rounded-lg shadow-[inset_0_1px_3px_rgba(0,0,0,0.8)] backdrop-blur-sm">
+                <Clock className="w-3.5 h-3.5 text-gold shrink-0" />
+                <div className="flex items-center font-mono font-bold text-[12px] md:text-[13px] tracking-widest text-amber-300 drop-shadow-[0_0_8px_rgba(251,191,36,0.45)] tabular-nums">
+                  <span>{hours}</span>
+                  <span className="text-amber-400/70 font-normal mx-0.5 animate-pulse">:</span>
+                  <span>{minutes}</span>
+                  <span className="text-amber-400/70 font-normal mx-0.5 animate-pulse">:</span>
+                  <span className="text-amber-200">{seconds}</span>
+                </div>
+                <span className="bg-gold/15 text-gold border border-gold/30 text-[9px] font-black px-1.5 py-0.2 rounded font-sans uppercase tracking-wider">
+                  WIB
+                </span>
+              </div>
+
+              <span className="inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                Online
+              </span>
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Mobile Nav */}
-      <AnimatePresence>
-        {isOpen && (
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            className="md:hidden bg-navy-light border-t border-gold/20 overflow-hidden shadow-2xl"
-          >
-            <div className="px-4 py-6 space-y-3">
-              {navItems.map((item) => (
+        {/* MAIN NAVBAR */}
+        <div className="nav-gradient text-white border-b border-gold/20 backdrop-blur-md">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex items-center justify-between h-16 md:h-18">
+              {/* Logo & Identitas */}
+              <div className="flex items-center gap-3 md:gap-4">
+                <motion.div 
+                  whileHover={{ rotate: 360 }}
+                  transition={{ duration: 0.6 }}
+                  onClick={() => setActiveTab('beranda')}
+                  className="rounded-2xl shadow-gold/25 shadow-lg flex items-center justify-center w-11 h-11 md:w-13 md:h-13 overflow-hidden border border-gold/30 bg-navy cursor-pointer shrink-0"
+                >
+                  <img 
+                    src="https://iili.io/B1rLqTN.md.png" 
+                    alt="Logo Rutan Sabang" 
+                    className="w-full h-full object-cover"
+                    referrerPolicy="no-referrer"
+                  />
+                </motion.div>
+                <div className="flex flex-col cursor-pointer" onClick={() => setActiveTab('beranda')}>
+                  <div className="flex items-center gap-2">
+                    <span className="font-black text-base md:text-xl tracking-tight leading-none text-white">SIPENSUS</span>
+                    <span className="bg-gold/20 text-gold text-[9px] font-black px-1.5 py-0.5 rounded border border-gold/30 uppercase tracking-widest font-mono">
+                      v2.6
+                    </span>
+                  </div>
+                  <span className="text-[10px] md:text-xs text-gold font-bold tracking-widest uppercase mt-0.5">
+                    Rutan Kelas IIB Sabang
+                  </span>
+                </div>
+              </div>
+              
+              {/* Desktop Nav & Quick Actions */}
+              <div className="hidden md:flex items-center gap-2">
+                {/* Navigation Items */}
+                <div className="flex items-center gap-1 bg-white/5 p-1 rounded-2xl border border-white/10">
+                  {navItems.map((item) => (
+                    <button
+                      key={item.id}
+                      onClick={() => setActiveTab(item.id)}
+                      className={cn(
+                        "flex items-center gap-2 px-4 py-2 rounded-xl transition-all duration-300 font-bold text-xs tracking-wide",
+                        activeTab === item.id 
+                          ? "bg-gold text-navy shadow-lg shadow-gold/20 font-black" 
+                          : "text-white/80 hover:text-white hover:bg-white/10"
+                      )}
+                    >
+                      <item.icon className="w-3.5 h-3.5" />
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="h-6 w-px bg-white/20 mx-1" />
+
+                {/* Tombol Pedoman Naskah */}
                 <button
-                  key={item.id}
+                  type="button"
+                  onClick={() => setIsPedomanOpen(true)}
+                  className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-gold hover:text-white bg-gold/10 hover:bg-gold/20 border border-gold/30 rounded-xl transition-all"
+                  title="Lihat Format Standar Penomoran Naskah"
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span className="hidden lg:inline">Pedoman Format</span>
+                </button>
+              </div>
+
+              {/* Mobile Buttons */}
+              <div className="flex items-center gap-2 md:hidden">
+                <button
+                  type="button"
+                  onClick={() => setIsPedomanOpen(true)}
+                  className="p-2 text-gold bg-white/5 border border-gold/20 rounded-xl text-xs font-bold"
+                  title="Pedoman Format"
+                >
+                  <FileText className="w-4 h-4" />
+                </button>
+                <button 
+                  onClick={() => setIsOpen(!isOpen)} 
+                  className="p-2 text-gold hover:bg-white/10 rounded-xl transition-colors border border-gold/20"
+                >
+                  {isOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Mobile Drawer */}
+        <AnimatePresence>
+          {isOpen && (
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="md:hidden bg-navy border-t border-gold/20 overflow-hidden shadow-2xl"
+            >
+              <div className="p-4 space-y-2">
+                {navItems.map((item) => (
+                  <button
+                    key={item.id}
+                    onClick={() => {
+                      setActiveTab(item.id);
+                      setIsOpen(false);
+                    }}
+                    className={cn(
+                      "flex items-center gap-3 w-full px-4 py-3 rounded-xl transition-all font-bold text-sm",
+                      activeTab === item.id 
+                        ? "bg-gold text-navy shadow-lg font-black" 
+                        : "text-white/80 hover:text-white hover:bg-white/5"
+                    )}
+                  >
+                    <item.icon className="w-4 h-4" />
+                    {item.label}
+                  </button>
+                ))}
+                
+                <button
                   onClick={() => {
-                    setActiveTab(item.id);
+                    setIsPedomanOpen(true);
                     setIsOpen(false);
                   }}
-                  className={cn(
-                    "flex items-center gap-4 w-full px-5 py-4 rounded-xl transition-all font-bold",
-                    activeTab === item.id 
-                      ? "bg-gold text-navy shadow-lg" 
-                      : "text-white/70 hover:text-white hover:bg-white/5"
-                  )}
+                  className="flex items-center gap-3 w-full px-4 py-3 rounded-xl text-gold font-bold text-sm bg-gold/10 border border-gold/30 mt-2"
                 >
-                  <item.icon className="w-5 h-5" />
-                  {item.label}
+                  <FileText className="w-4 h-4" />
+                  Pedoman Format Naskah
                 </button>
-              ))}
-            </div>
-          </motion.div>
+
+                <div className="pt-3 border-t border-white/10 text-[10px] text-slate-400 font-mono text-center">
+                  Satker: Rutan Sabang (WP.1.PAS.8)
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </nav>
+
+      {/* MODAL PEDOMAN FORMAT PENOMORAN NASKAH */}
+      <AnimatePresence>
+        {isPedomanOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsPedomanOpen(false)}
+              className="absolute inset-0 bg-navy/70 backdrop-blur-sm"
+            />
+            
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-2xl bg-white rounded-3xl shadow-2xl border border-gold/30 overflow-hidden z-10 text-left max-h-[90vh] flex flex-col"
+            >
+              {/* Header */}
+              <div className="bg-navy p-6 text-white border-b border-gold/20 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-gold/10 rounded-2xl border border-gold/30">
+                    <FileText className="w-6 h-6 text-gold" />
+                  </div>
+                  <div>
+                    <h3 className="font-black text-lg text-white">Pedoman Format Penomoran Naskah</h3>
+                    <p className="text-[11px] text-gold font-bold tracking-wider uppercase font-mono">
+                      Tata Naskah Dinas Resmi • Rutan Sabang (WP.1.PAS.8)
+                    </p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setIsPedomanOpen(false)}
+                  className="text-slate-300 hover:text-white font-black text-lg p-2"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Content */}
+              <div className="p-6 space-y-4 overflow-y-auto">
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-xs text-slate-600 leading-relaxed font-medium">
+                  Sistem penomoran resmi SIPENSUS secara otomatis menerapkan rumus format tata naskah dinas sesuai jenis naskah yang dipilih:
+                </div>
+
+                <div className="divide-y divide-slate-100 border border-slate-200 rounded-2xl overflow-hidden bg-white">
+                  <div className="p-3.5 bg-slate-100/70 font-black text-xs text-navy uppercase tracking-wider flex justify-between">
+                    <span>Jenis Naskah</span>
+                    <span>Format Penomoran Resmi</span>
+                  </div>
+
+                  <div className="p-3.5 flex items-center justify-between gap-4 text-xs hover:bg-slate-50">
+                    <span className="font-bold text-navy">Surat Dinas</span>
+                    <span className="font-mono font-bold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
+                      WP.1.PAS.8/klasifikasi/no surat/tahun
+                    </span>
+                  </div>
+
+                  <div className="p-3.5 flex items-center justify-between gap-4 text-xs hover:bg-slate-50">
+                    <span className="font-bold text-navy">Nota Dinas</span>
+                    <span className="font-mono font-bold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
+                      WP.1.PAS.8/klasifikasi/no surat/tahun
+                    </span>
+                  </div>
+
+                  <div className="p-3.5 flex items-center justify-between gap-4 text-xs bg-amber-50/60 border-l-4 border-l-amber-500">
+                    <div>
+                      <span className="font-black text-amber-900 block">Surat Perintah</span>
+                      <span className="text-[10px] text-amber-700 font-bold">Khusus: Tanpa Tahun (Naskah Penugasan)</span>
+                    </div>
+                    <span className="font-mono font-black text-amber-900 bg-amber-100/80 px-2.5 py-1 rounded-lg border border-amber-300">
+                      WP.1.PAS.8/klasifikasi/no surat
+                    </span>
+                  </div>
+
+                  <div className="p-3.5 flex items-center justify-between gap-4 text-xs hover:bg-slate-50">
+                    <span className="font-bold text-navy">Surat Edaran</span>
+                    <span className="font-mono font-bold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
+                      WP.1.PAS.8/klasifikasi/no surat/tahun
+                    </span>
+                  </div>
+
+                  <div className="p-3.5 flex items-center justify-between gap-4 text-xs hover:bg-slate-50">
+                    <span className="font-bold text-navy">Surat Keputusan</span>
+                    <span className="font-mono font-bold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
+                      WP.1.PAS.8/klasifikasi/no surat/tahun
+                    </span>
+                  </div>
+
+                  <div className="p-3.5 flex items-center justify-between gap-4 text-xs hover:bg-slate-50">
+                    <span className="font-bold text-navy">Surat Undangan</span>
+                    <span className="font-mono font-bold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
+                      WP.1.PAS.8/klasifikasi/no surat/tahun
+                    </span>
+                  </div>
+
+                  <div className="p-3.5 flex items-center justify-between gap-4 text-xs hover:bg-slate-50">
+                    <span className="font-bold text-navy">Surat Keterangan</span>
+                    <span className="font-mono font-bold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
+                      WP.1.PAS.8/klasifikasi/no surat/tahun
+                    </span>
+                  </div>
+
+                  <div className="p-3.5 flex items-center justify-between gap-4 text-xs hover:bg-slate-50">
+                    <span className="font-bold text-navy">Laporan</span>
+                    <span className="font-mono font-bold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
+                      WP.1.PAS.8/klasifikasi/no surat/tahun
+                    </span>
+                  </div>
+
+                  <div className="p-3.5 flex items-center justify-between gap-4 text-xs hover:bg-slate-50">
+                    <span className="font-bold text-navy">Notula Rapat</span>
+                    <span className="font-mono font-bold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
+                      WP.1.PAS.8/klasifikasi/no surat/tahun
+                    </span>
+                  </div>
+                </div>
+
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-[11px] text-emerald-800 font-bold flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>Data surat lama (sebelum aturan ini) tetap tersimpan aman dalam format aslinya.</span>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="bg-slate-50 p-4 border-t border-slate-100 flex items-center justify-end">
+                <button
+                  type="button"
+                  onClick={() => setIsPedomanOpen(false)}
+                  className="px-5 py-2 bg-navy text-white hover:bg-navy-light rounded-xl text-xs font-black uppercase tracking-wider transition-colors"
+                >
+                  Tutup Pedoman
+                </button>
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
-    </nav>
+    </>
   );
 };
 
@@ -494,7 +868,7 @@ const StatsDashboard = ({ data }: { data: Surat[] }) => {
             <div className="flex-1 min-w-0">
               <p className="text-white/70 text-[10px] font-bold uppercase tracking-widest">Nomor Terakhir</p>
               <h4 className="text-xl md:text-2xl font-black truncate">
-                {suratTerakhir ? formatFullNomor(suratTerakhir.kode_surat, suratTerakhir.nomor) : '-'}
+                {suratTerakhir ? formatFullNomor(suratTerakhir.kode_surat, suratTerakhir.nomor, suratTerakhir.tanggal, extractJenisNaskah(suratTerakhir)) : '-'}
               </h4>
               {suratTerakhir && (
                 <p className="text-[10px] text-gold font-bold truncate mt-1">
@@ -615,7 +989,12 @@ const RiwayatData = () => {
   };
 
   const getClassificationName = (code: string) => {
-    const match = ALL_CLASSIFICATIONS_FLAT.find(item => item.fullCode === code || item.code === code);
+    const clean = code.trim();
+    const match = ALL_CLASSIFICATIONS_FLAT.find(item => 
+      item.fullCode === clean || 
+      item.code === clean ||
+      clean.includes(item.code)
+    );
     return match ? match.name : 'Klasifikasi Umum / Kustom';
   };
 
@@ -644,7 +1023,7 @@ const RiwayatData = () => {
     const prefixes = ["PK", "PR", "KU", "OT", "SA", "PB", "KS", "HK", "UM", "PW", "TI"];
     const found = prefixes.find(p => kode.includes(p));
     if (found) return found;
-    const match = kode.split('.').find(part => part.length === 2 && /^[A-Z]{2}$/.test(part));
+    const match = kode.split(/[./]/).find(part => part.length === 2 && /^[A-Z]{2}$/.test(part));
     return match || "Lainnya";
   };
 
@@ -706,11 +1085,11 @@ const RiwayatData = () => {
       
       const tableData = suratInGroup.map(s => [
         s.nomor,
-        formatFullNomor(s.kode_surat, s.nomor),
+        formatFullNomor(s.kode_surat, s.nomor, s.tanggal, extractJenisNaskah(s)),
         s.perihal,
         formatDate(s.tanggal),
         s.tujuan || '-',
-        s.keterangan || '-'
+        cleanKeterangan(s.keterangan) || '-'
       ]);
 
       autoTable(doc, {
@@ -720,12 +1099,12 @@ const RiwayatData = () => {
         theme: 'grid',
         headStyles: { fillColor: [10, 15, 44], textColor: [212, 175, 55], fontStyle: 'bold', halign: 'center' },
         columnStyles: {
-          0: { halign: 'center', cellWidth: 15 },
-          1: { halign: 'center', cellWidth: 35 },
-          3: { halign: 'center', cellWidth: 25 }
+          0: { halign: 'center', cellWidth: 12 },
+          1: { halign: 'center', cellWidth: 50 },
+          3: { halign: 'center', cellWidth: 24 }
         },
         alternateRowStyles: { fillColor: [245, 247, 250] },
-        styles: { fontSize: 9 }
+        styles: { fontSize: 8.5 }
       });
     });
 
@@ -744,11 +1123,12 @@ const RiwayatData = () => {
     // 1. Sheet "Semua Surat" (Filtered or all)
     const wsAll = XLSX.utils.json_to_sheet(dataToExport.map(s => ({
       'No.': s.nomor,
-      'Nomor Lengkap': formatFullNomor(s.kode_surat, s.nomor),
+      'Jenis Naskah': extractJenisNaskah(s),
+      'Nomor Lengkap': formatFullNomor(s.kode_surat, s.nomor, s.tanggal, extractJenisNaskah(s)),
       'Perihal': s.perihal,
       'Tanggal': s.tanggal,
       'Tujuan': s.tujuan || '-',
-      'Pemohon': s.keterangan || '-',
+      'Pemohon': cleanKeterangan(s.keterangan) || '-',
       'Dibuat Pada': s.created_at ? format(parseISO(s.created_at), 'dd/MM/yyyy HH:mm') : '-'
     })));
     XLSX.utils.book_append_sheet(wb, wsAll, `Data Surat ${scopeLabel}`);
@@ -777,11 +1157,12 @@ const RiwayatData = () => {
 
       const wsGroup = XLSX.utils.json_to_sheet(suratInGroup.map(s => ({
         'No.': s.nomor,
-        'Nomor Lengkap': formatFullNomor(s.kode_surat, s.nomor),
+        'Jenis Naskah': extractJenisNaskah(s),
+        'Nomor Lengkap': formatFullNomor(s.kode_surat, s.nomor, s.tanggal, extractJenisNaskah(s)),
         'Perihal': s.perihal,
         'Tanggal': s.tanggal,
         'Tujuan': s.tujuan || '-',
-        'Pemohon': s.keterangan || '-'
+        'Pemohon': cleanKeterangan(s.keterangan) || '-'
       })));
 
       XLSX.utils.book_append_sheet(wb, wsGroup, finalSheetName);
@@ -951,23 +1332,34 @@ const RiwayatData = () => {
                     </td>
                     <td className="px-6 py-6">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-navy/5 flex items-center justify-center text-navy font-bold text-xs border border-navy/10">
-                          {surat.kode_surat.substring(0, 2)}
+                        <div className="w-10 h-10 rounded-xl bg-navy/5 flex items-center justify-center text-navy font-black text-xs border border-navy/10 shrink-0">
+                          {getPrefixOfSurat(surat.kode_surat)}
                         </div>
                         <div className="flex flex-col">
-                          <span className="font-mono text-sm font-black text-navy">{formatFullNomor(surat.kode_surat, surat.nomor)}</span>
-                          <button 
-                            onClick={() => handleCopy(formatFullNomor(surat.kode_surat, surat.nomor))} 
-                            className="text-[10px] text-gold-dark font-bold hover:underline flex items-center gap-1 w-max"
-                          >
-                            <Copy className="w-2.5 h-2.5" /> Salin Kode
-                          </button>
+                          <span className="font-mono text-sm font-black text-navy">
+                            {formatFullNomor(surat.kode_surat, surat.nomor, surat.tanggal, extractJenisNaskah(surat))}
+                          </span>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                              {extractJenisNaskah(surat)}
+                            </span>
+                            <button 
+                              onClick={() => handleCopy(formatFullNomor(surat.kode_surat, surat.nomor, surat.tanggal, extractJenisNaskah(surat)))} 
+                              className="text-[10px] text-gold-dark font-bold hover:underline flex items-center gap-1 w-max"
+                            >
+                              <Copy className="w-2.5 h-2.5" /> Salin Nomor
+                            </button>
+                          </div>
                         </div>
                       </div>
                     </td>
                     <td className="px-6 py-6">
                       <p className="text-sm font-bold text-navy leading-tight">{surat.perihal}</p>
-                      {surat.keterangan && <p className="text-[11px] text-slate-400 mt-1 line-clamp-1"><span className="font-black text-gold/80">Pemohon:</span> {surat.keterangan}</p>}
+                      {cleanKeterangan(surat.keterangan) && (
+                        <p className="text-[11px] text-slate-400 mt-1 line-clamp-1">
+                          <span className="font-black text-gold/80">Pemohon:</span> {cleanKeterangan(surat.keterangan)}
+                        </p>
+                      )}
                     </td>
                     <td className="px-6 py-6">
                       <div className="flex items-center gap-2 text-slate-500">
@@ -983,9 +1375,9 @@ const RiwayatData = () => {
                     <td className="px-6 py-6">
                       <div className="flex justify-center">
                         <button 
-                          onClick={() => handleCopy(formatFullNomor(surat.kode_surat, surat.nomor))}
+                          onClick={() => handleCopy(formatFullNomor(surat.kode_surat, surat.nomor, surat.tanggal, extractJenisNaskah(surat)))}
                           className="p-2.5 text-gold hover:text-gold-dark hover:bg-gold/10 rounded-xl transition-all"
-                          title="Salin Nomor Surat"
+                          title="Salin Nomor Lengkap"
                         >
                           <Copy className="w-5 h-5" />
                         </button>
@@ -1117,6 +1509,7 @@ const FormAmbilNomor = ({ onSuccess }: { onSuccess: () => void }) => {
       tanggal: format(new Date(), 'yyyy-MM-dd'),
       tujuan: '',
       keterangan: '',
+      jenis_naskah: 'Surat Dinas',
       nomor: 0
     }
   ]);
@@ -1176,11 +1569,12 @@ const FormAmbilNomor = ({ onSuccess }: { onSuccess: () => void }) => {
           tanggal: format(new Date(), 'yyyy-MM-dd'),
           tujuan: '',
           keterangan: '',
+          jenis_naskah: 'Surat Dinas',
           nomor: 0
         };
         const extra = Array.from({ length: newCount - prev.length }).map(() => ({
           ...template,
-          // Kosongkan detail spesifik agar petugas tidak keliru, tapi biarkan tanggal & keterangan
+          // Kosongkan detail spesifik agar petugas tidak keliru, tapi biarkan tanggal, keterangan & jenis naskah
           perihal: '',
           tujuan: ''
         }));
@@ -1218,7 +1612,8 @@ const FormAmbilNomor = ({ onSuccess }: { onSuccess: () => void }) => {
         tanggal: firstLetter.tanggal,
         tujuan: firstLetter.tujuan,
         keterangan: firstLetter.keterangan,
-        perihal: firstLetter.perihal // Salin juga perihal
+        perihal: firstLetter.perihal,
+        jenis_naskah: firstLetter.jenis_naskah || 'Surat Dinas'
       };
     }));
     toast.success('Berhasil menyalin data Surat #1 ke seluruh surat!');
@@ -1254,7 +1649,9 @@ const FormAmbilNomor = ({ onSuccess }: { onSuccess: () => void }) => {
 
       const getNextNomorForCodeAndYear = async (kode_surat: string, year: number) => {
         const cleanCode = kode_surat.trim();
-        const key = `${cleanCode}_${year}`;
+        // Ambil kode klasifikasi murni (tanpa prefix satker) untuk key cache
+        const baseClass = cleanCode.replace(/^WP\.\w+\.PAS\.\w+[./]/i, '');
+        const key = `${baseClass || cleanCode}_${year}`;
         if (lastNomorByCodeAndYear[key] !== undefined) {
           lastNomorByCodeAndYear[key]++;
           return lastNomorByCodeAndYear[key];
@@ -1263,10 +1660,21 @@ const FormAmbilNomor = ({ onSuccess }: { onSuccess: () => void }) => {
         const startDate = `${year}-01-01`;
         const endDate = `${year}-12-31`;
 
+        // Dukung kedua format kode (garis miring baru dan titik lama) agar nomor urut berlanjut sempurna dari data sebelumnya
+        const dotVariant = cleanCode.replace(/^WP\.1\.PAS\.8\//i, 'WP.1.PAS.8.');
+        const slashVariant = cleanCode.replace(/^WP\.1\.PAS\.8\./i, 'WP.1.PAS.8/');
+        const candidateCodes = Array.from(new Set([
+          cleanCode, 
+          dotVariant, 
+          slashVariant,
+          `WP.1.PAS.8.${baseClass}`,
+          `WP.1.PAS.8/${baseClass}`
+        ])).filter(Boolean);
+
         const { data: lastSurat, error: fetchError } = await supabase
           .from('surat')
           .select('nomor')
-          .eq('kode_surat', cleanCode)
+          .in('kode_surat', candidateCodes)
           .gte('tanggal', startDate)
           .lte('tanggal', endDate)
           .order('nomor', { ascending: false })
@@ -1283,14 +1691,38 @@ const FormAmbilNomor = ({ onSuccess }: { onSuccess: () => void }) => {
       const inserts: SuratInsert[] = [];
       for (const letter of letters) {
         const year = getYear(parseISO(letter.tanggal));
-        const seq = await getNextNomorForCodeAndYear(letter.kode_surat, year);
+        
+        // Pastikan setiap nomor surat baru yang diambil mulai sekarang selalu menggunakan format baru bergaris miring (/)
+        let newKodeSurat = letter.kode_surat.trim();
+        if (!newKodeSurat.includes('/')) {
+          if (newKodeSurat.startsWith('WP.1.PAS.8.')) {
+            newKodeSurat = newKodeSurat.replace(/^WP\.1\.PAS\.8\./i, 'WP.1.PAS.8/');
+          } else {
+            const clean = newKodeSurat.replace(/^[./]+/, '');
+            newKodeSurat = `WP.1.PAS.8/${clean}`;
+          }
+        }
+
+        const seq = await getNextNomorForCodeAndYear(newKodeSurat, year);
         inserts.push({
           ...letter,
+          kode_surat: newKodeSurat,
           nomor: seq
         });
       }
 
-      const { data: insertedData, error } = await supabase.from('surat').insert(inserts).select();
+      // Format payload database: jenis_naskah disimpan ke tag [Jenis Naskah] di kolom keterangan
+      const dbInserts = inserts.map(ins => {
+        const { jenis_naskah, ...cleanIns } = ins;
+        const tag = jenis_naskah ? `[${jenis_naskah}] ` : '[Surat Dinas] ';
+        const pureKet = cleanKeterangan(cleanIns.keterangan);
+        return {
+          ...cleanIns,
+          keterangan: (tag + pureKet).trim()
+        };
+      });
+
+      const { data: insertedData, error } = await supabase.from('surat').insert(dbInserts).select();
       
       if (error) throw error;
 
@@ -1303,13 +1735,22 @@ const FormAmbilNomor = ({ onSuccess }: { onSuccess: () => void }) => {
       
       if (jumlahSurat === 1) {
         const newSurat = insertedData?.[0];
-        const fullNomor = formatFullNomor(newSurat?.kode_surat || letters[0].kode_surat, newSurat?.nomor || inserts[0].nomor);
+        const selectedJenis = letters[0].jenis_naskah || (newSurat ? extractJenisNaskah(newSurat) : 'Surat Dinas');
+        const fullNomor = formatFullNomor(
+          newSurat?.kode_surat || letters[0].kode_surat, 
+          newSurat?.nomor || inserts[0].nomor,
+          newSurat?.tanggal || letters[0].tanggal,
+          selectedJenis
+        );
         toast.success('Nomor surat berhasil dibuat!', {
           description: `Nomor Lengkap: ${fullNomor}`,
           duration: 7000,
         });
       } else {
-        const detailNomor = insertedData?.map(s => formatFullNomor(s.kode_surat, s.nomor)).join(', ');
+        const detailNomor = insertedData?.map((s, idx) => {
+          const jenis = letters[idx]?.jenis_naskah || extractJenisNaskah(s);
+          return formatFullNomor(s.kode_surat, s.nomor, s.tanggal, jenis);
+        }).join(', ');
         toast.success(`Berhasil menerbitkan ${jumlahSurat} nomor surat sekaligus!`, {
           description: `Nomor diterbitkan: ${detailNomor}`,
           duration: 12000,
@@ -1324,6 +1765,7 @@ const FormAmbilNomor = ({ onSuccess }: { onSuccess: () => void }) => {
           tanggal: format(new Date(), 'yyyy-MM-dd'),
           tujuan: '',
           keterangan: '',
+          jenis_naskah: 'Surat Dinas',
           nomor: 0
         }
       ]);
@@ -1443,15 +1885,60 @@ const FormAmbilNomor = ({ onSuccess }: { onSuccess: () => void }) => {
             )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-2 relative">
+              {/* Jenis Naskah Dinas */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-black text-navy uppercase tracking-widest flex items-center gap-2">
+                    <FileText className="w-3.5 h-3.5 text-gold" /> Jenis Naskah Dinas
+                  </label>
+                  {activeLetter.jenis_naskah === 'Surat Perintah' && (
+                    <span className="text-[10px] text-amber-700 font-black bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
+                      Khusus: Tanpa Tahun
+                    </span>
+                  )}
+                </div>
+                <select
+                  value={activeLetter.jenis_naskah || 'Surat Dinas'}
+                  onChange={(e) => updateLetterField(activeLetterTab, 'jenis_naskah', e.target.value)}
+                  className="input-field py-3 font-bold text-sm bg-white"
+                >
+                  {JENIS_NASKAH_LIST.map((jenis) => (
+                    <option key={jenis} value={jenis}>
+                      {jenis}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Tanggal Surat */}
+              <div className="space-y-2">
                 <label className="text-xs font-black text-navy uppercase tracking-widest flex items-center gap-2">
-                  <Tag className="w-3.5 h-3.5 text-gold" /> Kode Surat
+                  <Calendar className="w-3.5 h-3.5 text-gold" /> Tanggal Surat
                 </label>
+                <input
+                  required
+                  type="date"
+                  className="input-field py-3 font-bold text-sm"
+                  value={activeLetter.tanggal}
+                  onChange={(e) => updateLetterField(activeLetterTab, 'tanggal', e.target.value)}
+                />
+              </div>
+
+              {/* Kode Klasifikasi Surat */}
+              <div className="space-y-2 relative">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-black text-navy uppercase tracking-widest flex items-center gap-2">
+                    <Tag className="w-3.5 h-3.5 text-gold" /> Kode Klasifikasi Surat
+                  </label>
+                  <span className="text-[10px] text-slate-400 font-bold hidden sm:inline">
+                    Korespondensi Internal
+                  </span>
+                </div>
                 <div className="relative">
                   <input
                     required
                     type="text"
-                    placeholder="Cari kode atau nama, cth: PK.02.01 / Tahanan"
+                    placeholder="Cari kode atau nama, cth: PK.09.02 / Keamanan"
                     className="input-field py-3 font-mono font-bold text-sm pr-10 w-full"
                     value={activeLetter.kode_surat}
                     onChange={(e) => {
@@ -1469,6 +1956,23 @@ const FormAmbilNomor = ({ onSuccess }: { onSuccess: () => void }) => {
                     <Search className="w-4 h-4" />
                   </div>
                 </div>
+
+                {/* Live Preview Format Nomor Baru */}
+                {activeLetter.kode_surat && (
+                  <div className="p-2.5 bg-navy/5 border border-gold/20 rounded-xl flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Format Nomor ({activeLetter.jenis_naskah || 'Surat Dinas'}):</span>
+                    <span className="font-mono text-xs font-black text-navy bg-white px-2.5 py-1 rounded-lg border border-slate-200">
+                      {formatFullNomor(
+                        activeLetter.kode_surat.includes('/') 
+                          ? activeLetter.kode_surat 
+                          : 'WP.1.PAS.8/' + activeLetter.kode_surat.replace(/^WP\.1\.PAS\.8\./i, '').replace(/^[./]+/, ''),
+                        '[No.Urut]',
+                        activeLetter.tanggal,
+                        activeLetter.jenis_naskah || 'Surat Dinas'
+                      )}
+                    </span>
+                  </div>
+                )}
 
                 {isDropdownOpen && (
                   <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-72 overflow-y-auto divide-y divide-slate-100">
@@ -1515,30 +2019,19 @@ const FormAmbilNomor = ({ onSuccess }: { onSuccess: () => void }) => {
                   </div>
                 )}
               </div>
+
+              {/* Perihal */}
               <div className="space-y-2">
-                <label className="text-xs font-black text-navy uppercase tracking-widest flex items-center gap-2">
-                  <Calendar className="w-3.5 h-3.5 text-gold" /> Tanggal Surat
-                </label>
+                <label className="text-xs font-black text-navy uppercase tracking-widest">Perihal</label>
                 <input
                   required
-                  type="date"
+                  type="text"
+                  placeholder="cth: Permohonan Cuti Dinas / Pemindahan WBP"
                   className="input-field py-3 font-bold text-sm"
-                  value={activeLetter.tanggal}
-                  onChange={(e) => updateLetterField(activeLetterTab, 'tanggal', e.target.value)}
+                  value={activeLetter.perihal}
+                  onChange={(e) => updateLetterField(activeLetterTab, 'perihal', e.target.value)}
                 />
               </div>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-xs font-black text-navy uppercase tracking-widest">Perihal</label>
-              <input
-                required
-                type="text"
-                placeholder="cth: Permohonan Cuti Dinas / Pemindahan WBP"
-                className="input-field py-3 font-bold text-sm"
-                value={activeLetter.perihal}
-                onChange={(e) => updateLetterField(activeLetterTab, 'perihal', e.target.value)}
-              />
             </div>
 
             <div className="space-y-2">
@@ -1575,7 +2068,7 @@ const FormAmbilNomor = ({ onSuccess }: { onSuccess: () => void }) => {
               <div className="max-h-40 overflow-y-auto space-y-2 divide-y divide-slate-100 pr-2">
                 {letters.map((letter, idx) => (
                   <div key={idx} className="pt-2 text-xs flex justify-between gap-4 font-bold">
-                    <span className="text-navy">Surat #{idx + 1} ({letter.kode_surat || 'Kode belum diisi'}):</span>
+                    <span className="text-navy">Surat #{idx + 1} <span className="text-[10px] bg-slate-200 px-1.5 py-0.5 rounded text-slate-700 font-black">[{letter.jenis_naskah || 'Surat Dinas'}]</span> ({letter.kode_surat || 'Kode belum diisi'}):</span>
                     <span className="text-slate-500 truncate max-w-xs">{letter.perihal || 'Perihal belum diisi'}</span>
                     <span className="text-gold-dark truncate max-w-[150px]">{letter.tujuan || 'Tujuan belum diisi'}</span>
                   </div>
@@ -1614,7 +2107,7 @@ export default function App() {
       <Toaster position="top-right" richColors closeButton />
       <Navbar activeTab={activeTab} setActiveTab={setActiveTab} />
 
-      <main className="pt-16 md:pt-20">
+      <main className="pt-24 md:pt-28">
         <AnimatePresence mode="wait">
           {activeTab === 'beranda' && (
             <motion.div

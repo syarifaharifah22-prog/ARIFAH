@@ -7,6 +7,7 @@ export interface Surat {
   tujuan: string;
   keterangan: string;
   created_at: string;
+  jenis_naskah?: string;
 }
 
 export type SuratInsert = Omit<Surat, 'id' | 'created_at'>;
