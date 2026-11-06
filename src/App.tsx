@@ -124,7 +124,12 @@ const formatFullNomor = (
 ) => {
   if (!kode) return String(nomor);
   const formattedNomor = String(nomor).trim();
-  const cleanKode = kode.trim().replace(/[./\-]+$/, '');
+  // Bersihkan kurung siku [No.Urut] atau sejenisnya, trailing dots/slashes/hyphens
+  let cleanKode = kode
+    .trim()
+    .replace(/\[.*?\]/g, '')
+    .replace(/\/+/g, '/')
+    .replace(/[./\-]+$/, '');
 
   // Jika kode mengandung '/' berarti ini data baru (format naskah baru)
   if (cleanKode.includes('/')) {
@@ -140,7 +145,7 @@ const formatFullNomor = (
       klasifikasi = '';
     }
 
-    klasifikasi = klasifikasi.replace(/^[./]+|[./]+$/g, '');
+    klasifikasi = klasifikasi.replace(/^[./]+|[./]+$/g, '').toUpperCase();
 
     // KHUSUS SURAT PERINTAH: WP.1.PAS.8/klasifikasi/no surat (Cuma ini yg beda, TIDAK PAKAI TAHUN)
     const isSuratPerintah = (jenis || '').toLowerCase().trim() === 'surat perintah';
@@ -282,13 +287,8 @@ const Navbar = ({ activeTab, setActiveTab }: { activeTab: string, setActiveTab: 
                   />
                 </motion.div>
                 <div className="flex flex-col cursor-pointer" onClick={() => setActiveTab('beranda')}>
-                  <div className="flex items-center gap-2">
-                    <span className="font-black text-base md:text-xl tracking-tight leading-none text-white">SIPENSUS</span>
-                    <span className="bg-gold/20 text-gold text-[9px] font-black px-1.5 py-0.5 rounded border border-gold/30 uppercase tracking-widest font-mono">
-                      v2.6
-                    </span>
-                  </div>
-                  <span className="text-[10px] md:text-xs text-gold font-bold tracking-widest uppercase mt-0.5">
+                  <span className="font-black text-base md:text-xl tracking-tight leading-none text-white">SIPENSUS</span>
+                  <span className="text-[10px] md:text-xs text-gold font-bold tracking-widest uppercase mt-1">
                     Rutan Kelas IIB Sabang
                   </span>
                 </div>
@@ -1538,6 +1538,64 @@ const FormAmbilNomor = ({ onSuccess }: { onSuccess: () => void }) => {
   }, []);
 
   const activeLetter = letters[activeLetterTab] || letters[0];
+  const [estimatedNomor, setEstimatedNomor] = useState<number | null>(null);
+
+  useEffect(() => {
+    const raw = activeLetter?.kode_surat?.trim().replace(/\[.*?\]/g, '').replace(/^[./\s]+|[./\s]+$/g, '');
+    if (!raw) {
+      setEstimatedNomor(null);
+      return;
+    }
+    const baseClass = raw.replace(/^WP\.\w+\.PAS\.\w+[./]/i, '').replace(/^[./\s]+|[./\s]+$/g, '').trim().toUpperCase();
+    if (!baseClass) {
+      setEstimatedNomor(null);
+      return;
+    }
+
+    let isMounted = true;
+    let year = 2026;
+    if (activeLetter.tanggal) {
+      const d = parseISO(activeLetter.tanggal);
+      if (!isNaN(d.getTime())) year = getYear(d);
+    }
+    const startDate = `${year}-01-01`;
+    const endDate = `${year}-12-31`;
+
+    const candidateCodes = Array.from(new Set([
+      `WP.1.PAS.8/${baseClass}`,
+      `WP.1.PAS.8.${baseClass}`,
+      `WP.1.PAS.8/${baseClass.toLowerCase()}`,
+      `WP.1.PAS.8.${baseClass.toLowerCase()}`,
+      baseClass,
+      baseClass.toLowerCase()
+    ]));
+
+    const fetchEstimate = async () => {
+      try {
+        const { data } = await supabase
+          .from('surat')
+          .select('nomor')
+          .in('kode_surat', candidateCodes)
+          .gte('tanggal', startDate)
+          .lte('tanggal', endDate)
+          .order('nomor', { ascending: false })
+          .limit(1);
+
+        if (isMounted) {
+          const next = data && data.length > 0 ? data[0].nomor + 1 : 1;
+          setEstimatedNomor(next);
+        }
+      } catch (err) {
+        // Abaikan error estimasi agar form tetap responsif
+      }
+    };
+
+    fetchEstimate();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activeLetter?.kode_surat, activeLetter?.tanggal]);
 
   const filteredRiwayatKode = useMemo(() => {
     const rawInput = activeLetter?.kode_surat?.trim().toLowerCase() || '';
@@ -1647,11 +1705,11 @@ const FormAmbilNomor = ({ onSuccess }: { onSuccess: () => void }) => {
       // Kelompokkan surat berdasarkan kode dan tahun untuk menghitung nomor urut secara presisi
       const lastNomorByCodeAndYear: { [key: string]: number } = {};
 
-      const getNextNomorForCodeAndYear = async (kode_surat: string, year: number) => {
-        const cleanCode = kode_surat.trim();
-        // Ambil kode klasifikasi murni (tanpa prefix satker) untuk key cache
-        const baseClass = cleanCode.replace(/^WP\.\w+\.PAS\.\w+[./]/i, '');
-        const key = `${baseClass || cleanCode}_${year}`;
+      const getNextNomorForCodeAndYear = async (rawCode: string, year: number) => {
+        const cleanCode = rawCode.trim().replace(/\[.*?\]/g, '').replace(/^[./\s]+|[./\s]+$/g, '');
+        // Ambil kode klasifikasi murni (tanpa prefix satker) dan pastikan HURUF BESAR
+        const baseClass = cleanCode.replace(/^WP\.\w+\.PAS\.\w+[./]/i, '').replace(/^[./\s]+|[./\s]+$/g, '').trim().toUpperCase();
+        const key = `${baseClass || cleanCode.toUpperCase()}_${year}`;
         if (lastNomorByCodeAndYear[key] !== undefined) {
           lastNomorByCodeAndYear[key]++;
           return lastNomorByCodeAndYear[key];
@@ -1660,15 +1718,18 @@ const FormAmbilNomor = ({ onSuccess }: { onSuccess: () => void }) => {
         const startDate = `${year}-01-01`;
         const endDate = `${year}-12-31`;
 
-        // Dukung kedua format kode (garis miring baru dan titik lama) agar nomor urut berlanjut sempurna dari data sebelumnya
-        const dotVariant = cleanCode.replace(/^WP\.1\.PAS\.8\//i, 'WP.1.PAS.8.');
-        const slashVariant = cleanCode.replace(/^WP\.1\.PAS\.8\./i, 'WP.1.PAS.8/');
+        // Dukung kedua format kode (garis miring baru dan titik lama) serta huruf besar/kecil
+        // agar nomor urut 100% berlanjut mulus dari data sebelumnya
         const candidateCodes = Array.from(new Set([
-          cleanCode, 
-          dotVariant, 
-          slashVariant,
+          `WP.1.PAS.8/${baseClass}`,
           `WP.1.PAS.8.${baseClass}`,
-          `WP.1.PAS.8/${baseClass}`
+          `WP.1.PAS.8/${baseClass.toLowerCase()}`,
+          `WP.1.PAS.8.${baseClass.toLowerCase()}`,
+          baseClass,
+          baseClass.toLowerCase(),
+          cleanCode,
+          cleanCode.toUpperCase(),
+          cleanCode.toLowerCase()
         ])).filter(Boolean);
 
         const { data: lastSurat, error: fetchError } = await supabase
@@ -1692,16 +1753,10 @@ const FormAmbilNomor = ({ onSuccess }: { onSuccess: () => void }) => {
       for (const letter of letters) {
         const year = getYear(parseISO(letter.tanggal));
         
-        // Pastikan setiap nomor surat baru yang diambil mulai sekarang selalu menggunakan format baru bergaris miring (/)
-        let newKodeSurat = letter.kode_surat.trim();
-        if (!newKodeSurat.includes('/')) {
-          if (newKodeSurat.startsWith('WP.1.PAS.8.')) {
-            newKodeSurat = newKodeSurat.replace(/^WP\.1\.PAS\.8\./i, 'WP.1.PAS.8/');
-          } else {
-            const clean = newKodeSurat.replace(/^[./]+/, '');
-            newKodeSurat = `WP.1.PAS.8/${clean}`;
-          }
-        }
+        // Bersihkan kode dan pastikan klasifikasi selalu huruf kapital resmi dan berformat baru WP.1.PAS.8/KLASIFIKASI
+        let rawKode = letter.kode_surat.trim().replace(/\[.*?\]/g, '').replace(/^[./\s]+|[./\s]+$/g, '');
+        const baseClass = rawKode.replace(/^WP\.\w+\.PAS\.\w+[./]/i, '').replace(/^[./\s]+|[./\s]+$/g, '').trim().toUpperCase();
+        const newKodeSurat = baseClass ? `WP.1.PAS.8/${baseClass}` : `WP.1.PAS.8/${rawKode.toUpperCase()}`;
 
         const seq = await getNextNomorForCodeAndYear(newKodeSurat, year);
         inserts.push({
@@ -1942,7 +1997,8 @@ const FormAmbilNomor = ({ onSuccess }: { onSuccess: () => void }) => {
                     className="input-field py-3 font-mono font-bold text-sm pr-10 w-full"
                     value={activeLetter.kode_surat}
                     onChange={(e) => {
-                      updateLetterField(activeLetterTab, 'kode_surat', e.target.value);
+                      const cleanVal = e.target.value.replace(/\[.*?\]/g, '');
+                      updateLetterField(activeLetterTab, 'kode_surat', cleanVal);
                       setIsDropdownOpen(true);
                     }}
                     onFocus={() => setIsDropdownOpen(true)}
@@ -1960,13 +2016,16 @@ const FormAmbilNomor = ({ onSuccess }: { onSuccess: () => void }) => {
                 {/* Live Preview Format Nomor Baru */}
                 {activeLetter.kode_surat && (
                   <div className="p-2.5 bg-navy/5 border border-gold/20 rounded-xl flex items-center justify-between gap-2">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Format Nomor ({activeLetter.jenis_naskah || 'Surat Dinas'}):</span>
-                    <span className="font-mono text-xs font-black text-navy bg-white px-2.5 py-1 rounded-lg border border-slate-200">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                      Nomor Berikutnya ({activeLetter.jenis_naskah || 'Surat Dinas'}):
+                    </span>
+                    <span className="font-mono text-xs font-black text-navy bg-white px-2.5 py-1 rounded-lg border border-gold/30 shadow-xs">
                       {formatFullNomor(
                         activeLetter.kode_surat.includes('/') 
                           ? activeLetter.kode_surat 
                           : 'WP.1.PAS.8/' + activeLetter.kode_surat.replace(/^WP\.1\.PAS\.8\./i, '').replace(/^[./]+/, ''),
-                        '[No.Urut]',
+                        estimatedNomor !== null ? estimatedNomor : '...',
                         activeLetter.tanggal,
                         activeLetter.jenis_naskah || 'Surat Dinas'
                       )}
