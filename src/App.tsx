@@ -73,12 +73,13 @@ export const JENIS_NASKAH_LIST = [
 
 export type JenisNaskah = typeof JENIS_NASKAH_LIST[number];
 
-export const cleanKeterangan = (keterangan?: string): string => {
+export const cleanKeterangan = (keterangan?: string | null): string => {
   if (!keterangan) return '';
-  return keterangan.replace(/^\[[a-zA-Z\s]+\]\s*/, '').trim();
+  return keterangan.replace(/^\[.*?\]\s*/, '').trim();
 };
 
-export const extractJenisNaskah = (surat: { keterangan?: string; perihal?: string; jenis_naskah?: string }): string => {
+export const extractJenisNaskah = (surat?: { keterangan?: string | null; perihal?: string | null; jenis_naskah?: string | null } | null): string => {
+  if (!surat) return 'Surat Dinas';
   if (surat.jenis_naskah) return surat.jenis_naskah;
   const ket = surat.keterangan || '';
   const tagMatch = ket.match(/^\[([a-zA-Z\s]+)\]/);
@@ -117,13 +118,13 @@ export const extractJenisNaskah = (surat: { keterangan?: string; perihal?: strin
 };
 
 const formatFullNomor = (
-  kode: string, 
-  nomor: number | string, 
+  kode?: string | null, 
+  nomor?: number | string | null, 
   tanggal?: string | Date | null,
   jenis?: string
 ) => {
-  if (!kode) return String(nomor);
-  const formattedNomor = String(nomor).trim();
+  if (!kode) return String(nomor ?? '');
+  const formattedNomor = String(nomor ?? '').trim();
   // Bersihkan kurung siku [No.Urut] atau sejenisnya, trailing dots/slashes/hyphens
   let cleanKode = kode
     .trim()
@@ -190,7 +191,6 @@ const formatFullNomor = (
 
 const Navbar = ({ activeTab, setActiveTab }: { activeTab: string, setActiveTab: (tab: string) => void }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [isPedomanOpen, setIsPedomanOpen] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
 
   useEffect(() => {
@@ -314,31 +314,10 @@ const Navbar = ({ activeTab, setActiveTab }: { activeTab: string, setActiveTab: 
                     </button>
                   ))}
                 </div>
-
-                <div className="h-6 w-px bg-white/20 mx-1" />
-
-                {/* Tombol Pedoman Naskah */}
-                <button
-                  type="button"
-                  onClick={() => setIsPedomanOpen(true)}
-                  className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-gold hover:text-white bg-gold/10 hover:bg-gold/20 border border-gold/30 rounded-xl transition-all"
-                  title="Lihat Format Standar Penomoran Naskah"
-                >
-                  <FileText className="w-3.5 h-3.5" />
-                  <span className="hidden lg:inline">Pedoman Format</span>
-                </button>
               </div>
 
               {/* Mobile Buttons */}
               <div className="flex items-center gap-2 md:hidden">
-                <button
-                  type="button"
-                  onClick={() => setIsPedomanOpen(true)}
-                  className="p-2 text-gold bg-white/5 border border-gold/20 rounded-xl text-xs font-bold"
-                  title="Pedoman Format"
-                >
-                  <FileText className="w-4 h-4" />
-                </button>
                 <button 
                   onClick={() => setIsOpen(!isOpen)} 
                   className="p-2 text-gold hover:bg-white/10 rounded-xl transition-colors border border-gold/20"
@@ -379,17 +358,6 @@ const Navbar = ({ activeTab, setActiveTab }: { activeTab: string, setActiveTab: 
                   </button>
                 ))}
                 
-                <button
-                  onClick={() => {
-                    setIsPedomanOpen(true);
-                    setIsOpen(false);
-                  }}
-                  className="flex items-center gap-3 w-full px-4 py-3 rounded-xl text-gold font-bold text-sm bg-gold/10 border border-gold/30 mt-2"
-                >
-                  <FileText className="w-4 h-4" />
-                  Pedoman Format Naskah
-                </button>
-
                 <div className="pt-3 border-t border-white/10 text-[10px] text-slate-400 font-mono text-center">
                   Satker: Rutan Sabang (WP.1.PAS.8)
                 </div>
@@ -398,145 +366,6 @@ const Navbar = ({ activeTab, setActiveTab }: { activeTab: string, setActiveTab: 
           )}
         </AnimatePresence>
       </nav>
-
-      {/* MODAL PEDOMAN FORMAT PENOMORAN NASKAH */}
-      <AnimatePresence>
-        {isPedomanOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsPedomanOpen(false)}
-              className="absolute inset-0 bg-navy/70 backdrop-blur-sm"
-            />
-            
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-2xl bg-white rounded-3xl shadow-2xl border border-gold/30 overflow-hidden z-10 text-left max-h-[90vh] flex flex-col"
-            >
-              {/* Header */}
-              <div className="bg-navy p-6 text-white border-b border-gold/20 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="p-2.5 bg-gold/10 rounded-2xl border border-gold/30">
-                    <FileText className="w-6 h-6 text-gold" />
-                  </div>
-                  <div>
-                    <h3 className="font-black text-lg text-white">Pedoman Format Penomoran Naskah</h3>
-                    <p className="text-[11px] text-gold font-bold tracking-wider uppercase font-mono">
-                      Tata Naskah Dinas Resmi • Rutan Sabang (WP.1.PAS.8)
-                    </p>
-                  </div>
-                </div>
-                <button 
-                  onClick={() => setIsPedomanOpen(false)}
-                  className="text-slate-300 hover:text-white font-black text-lg p-2"
-                >
-                  ✕
-                </button>
-              </div>
-
-              {/* Content */}
-              <div className="p-6 space-y-4 overflow-y-auto">
-                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-xs text-slate-600 leading-relaxed font-medium">
-                  Sistem penomoran resmi SIPENSUS secara otomatis menerapkan rumus format tata naskah dinas sesuai jenis naskah yang dipilih:
-                </div>
-
-                <div className="divide-y divide-slate-100 border border-slate-200 rounded-2xl overflow-hidden bg-white">
-                  <div className="p-3.5 bg-slate-100/70 font-black text-xs text-navy uppercase tracking-wider flex justify-between">
-                    <span>Jenis Naskah</span>
-                    <span>Format Penomoran Resmi</span>
-                  </div>
-
-                  <div className="p-3.5 flex items-center justify-between gap-4 text-xs hover:bg-slate-50">
-                    <span className="font-bold text-navy">Surat Dinas</span>
-                    <span className="font-mono font-bold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
-                      WP.1.PAS.8/klasifikasi/no surat/tahun
-                    </span>
-                  </div>
-
-                  <div className="p-3.5 flex items-center justify-between gap-4 text-xs hover:bg-slate-50">
-                    <span className="font-bold text-navy">Nota Dinas</span>
-                    <span className="font-mono font-bold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
-                      WP.1.PAS.8/klasifikasi/no surat/tahun
-                    </span>
-                  </div>
-
-                  <div className="p-3.5 flex items-center justify-between gap-4 text-xs bg-amber-50/60 border-l-4 border-l-amber-500">
-                    <div>
-                      <span className="font-black text-amber-900 block">Surat Perintah</span>
-                      <span className="text-[10px] text-amber-700 font-bold">Khusus: Tanpa Tahun (Naskah Penugasan)</span>
-                    </div>
-                    <span className="font-mono font-black text-amber-900 bg-amber-100/80 px-2.5 py-1 rounded-lg border border-amber-300">
-                      WP.1.PAS.8/klasifikasi/no surat
-                    </span>
-                  </div>
-
-                  <div className="p-3.5 flex items-center justify-between gap-4 text-xs hover:bg-slate-50">
-                    <span className="font-bold text-navy">Surat Edaran</span>
-                    <span className="font-mono font-bold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
-                      WP.1.PAS.8/klasifikasi/no surat/tahun
-                    </span>
-                  </div>
-
-                  <div className="p-3.5 flex items-center justify-between gap-4 text-xs hover:bg-slate-50">
-                    <span className="font-bold text-navy">Surat Keputusan</span>
-                    <span className="font-mono font-bold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
-                      WP.1.PAS.8/klasifikasi/no surat/tahun
-                    </span>
-                  </div>
-
-                  <div className="p-3.5 flex items-center justify-between gap-4 text-xs hover:bg-slate-50">
-                    <span className="font-bold text-navy">Surat Undangan</span>
-                    <span className="font-mono font-bold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
-                      WP.1.PAS.8/klasifikasi/no surat/tahun
-                    </span>
-                  </div>
-
-                  <div className="p-3.5 flex items-center justify-between gap-4 text-xs hover:bg-slate-50">
-                    <span className="font-bold text-navy">Surat Keterangan</span>
-                    <span className="font-mono font-bold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
-                      WP.1.PAS.8/klasifikasi/no surat/tahun
-                    </span>
-                  </div>
-
-                  <div className="p-3.5 flex items-center justify-between gap-4 text-xs hover:bg-slate-50">
-                    <span className="font-bold text-navy">Laporan</span>
-                    <span className="font-mono font-bold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
-                      WP.1.PAS.8/klasifikasi/no surat/tahun
-                    </span>
-                  </div>
-
-                  <div className="p-3.5 flex items-center justify-between gap-4 text-xs hover:bg-slate-50">
-                    <span className="font-bold text-navy">Notula Rapat</span>
-                    <span className="font-mono font-bold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
-                      WP.1.PAS.8/klasifikasi/no surat/tahun
-                    </span>
-                  </div>
-                </div>
-
-                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-[11px] text-emerald-800 font-bold flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>Data surat lama (sebelum aturan ini) tetap tersimpan aman dalam format aslinya.</span>
-                </div>
-              </div>
-
-              {/* Footer */}
-              <div className="bg-slate-50 p-4 border-t border-slate-100 flex items-center justify-end">
-                <button
-                  type="button"
-                  onClick={() => setIsPedomanOpen(false)}
-                  className="px-5 py-2 bg-navy text-white hover:bg-navy-light rounded-xl text-xs font-black uppercase tracking-wider transition-colors"
-                >
-                  Tutup Pedoman
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
     </>
   );
 };
@@ -606,10 +435,8 @@ const generateGuidePDF = () => {
   doc.setTextColor(150);
   doc.text('SIPENSUS Sabang - Inovasi Digital Pemasyarakatan', 105, 277, { align: 'center' });
 
-  const blob = doc.output('blob');
-  const url = URL.createObjectURL(blob);
-  window.open(url, '_blank');
-  toast.success('Panduan dibuka di tab baru');
+  doc.save('Panduan_Penggunaan_SIPENSUS.pdf');
+  toast.success('Panduan berhasil diunduh');
 };
 
 const Hero = ({ onAction, onDownloadGuide }: { onAction: () => void, onDownloadGuide: () => void }) => (
@@ -926,28 +753,38 @@ const RiwayatData = () => {
 
     // Search Filter
     if (searchTerm) {
-      const lowerSearch = searchTerm.toLowerCase();
+      const lowerSearch = searchTerm.toLowerCase().trim();
       result = result.filter(s => 
-        s.perihal.toLowerCase().includes(lowerSearch) ||
-        s.kode_surat.toLowerCase().includes(lowerSearch) ||
-        s.tujuan.toLowerCase().includes(lowerSearch)
+        (s.perihal || '').toLowerCase().includes(lowerSearch) ||
+        (s.kode_surat || '').toLowerCase().includes(lowerSearch) ||
+        (s.tujuan || '').toLowerCase().includes(lowerSearch) ||
+        cleanKeterangan(s.keterangan).toLowerCase().includes(lowerSearch)
       );
     }
 
     // Date Range Filter
     if (dateRange.start && dateRange.end) {
-      result = result.filter(s => 
-        isWithinInterval(parseISO(s.tanggal), {
-          start: parseISO(dateRange.start),
-          end: parseISO(dateRange.end)
-        })
-      );
+      try {
+        const dStart = parseISO(dateRange.start);
+        const dEnd = parseISO(dateRange.end);
+        if (!isNaN(dStart.getTime()) && !isNaN(dEnd.getTime())) {
+          const start = dStart <= dEnd ? dStart : dEnd;
+          const end = dStart <= dEnd ? dEnd : dStart;
+          result = result.filter(s => {
+            if (!s.tanggal) return false;
+            const d = parseISO(s.tanggal);
+            return !isNaN(d.getTime()) && isWithinInterval(d, { start, end });
+          });
+        }
+      } catch {
+        // Abaikan filter jika rentang tidak valid
+      }
     }
 
     // Sorting
     result.sort((a, b) => {
-      const valA = a[sortConfig.key];
-      const valB = b[sortConfig.key];
+      const valA = a[sortConfig.key] ?? '';
+      const valB = b[sortConfig.key] ?? '';
       if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
       if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
       return 0;
@@ -972,20 +809,36 @@ const RiwayatData = () => {
     return Object.keys(groupedSurat).sort();
   }, [groupedSurat]);
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Apakah Anda yakin ingin menghapus data ini?')) return;
+  const fallbackCopyText = (text: string) => {
     try {
-      const { error } = await supabase.from('surat').delete().eq('id', id);
-      if (error) throw error;
-      toast.success('Data berhasil dihapus');
-    } catch (error) {
-      toast.error('Gagal menghapus data');
+      const textArea = document.createElement("textarea");
+      textArea.value = text;
+      textArea.style.position = "fixed";
+      textArea.style.left = "-999999px";
+      textArea.style.top = "-999999px";
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      document.execCommand('copy');
+      textArea.remove();
+      toast.info('Nomor surat disalin ke clipboard');
+    } catch {
+      toast.info('Nomor surat disalin');
     }
   };
 
   const handleCopy = (text: string) => {
-    navigator.clipboard.writeText(text);
-    toast.info('Kode surat disalin ke clipboard');
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text)
+          .then(() => toast.info('Nomor surat disalin ke clipboard'))
+          .catch(() => fallbackCopyText(text));
+      } else {
+        fallbackCopyText(text);
+      }
+    } catch {
+      fallbackCopyText(text);
+    }
   };
 
   const getClassificationName = (code: string) => {
@@ -1019,11 +872,13 @@ const RiwayatData = () => {
     "Lainnya": "Klasifikasi Lainnya"
   };
 
-  const getPrefixOfSurat = (kode: string) => {
+  const getPrefixOfSurat = (kode?: string | null) => {
+    if (!kode) return "Lainnya";
+    const upper = kode.toUpperCase();
     const prefixes = ["PK", "PR", "KU", "OT", "SA", "PB", "KS", "HK", "UM", "PW", "TI"];
-    const found = prefixes.find(p => kode.includes(p));
+    const found = prefixes.find(p => upper.includes(p));
     if (found) return found;
-    const match = kode.split(/[./]/).find(part => part.length === 2 && /^[A-Z]{2}$/.test(part));
+    const match = upper.split(/[./]/).find(part => part.length === 2 && /^[A-Z]{2}$/.test(part));
     return match || "Lainnya";
   };
 
@@ -1129,7 +984,15 @@ const RiwayatData = () => {
       'Tanggal': s.tanggal,
       'Tujuan': s.tujuan || '-',
       'Pemohon': cleanKeterangan(s.keterangan) || '-',
-      'Dibuat Pada': s.created_at ? format(parseISO(s.created_at), 'dd/MM/yyyy HH:mm') : '-'
+      'Dibuat Pada': (() => {
+        if (!s.created_at) return '-';
+        try {
+          const d = parseISO(s.created_at);
+          return isNaN(d.getTime()) ? '-' : format(d, 'dd/MM/yyyy HH:mm');
+        } catch {
+          return '-';
+        }
+      })()
     })));
     XLSX.utils.book_append_sheet(wb, wsAll, `Data Surat ${scopeLabel}`);
 
@@ -1595,7 +1458,7 @@ const FormAmbilNomor = ({ onSuccess }: { onSuccess: () => void }) => {
     return () => {
       isMounted = false;
     };
-  }, [activeLetter?.kode_surat, activeLetter?.tanggal]);
+  }, [activeLetter?.kode_surat, activeLetter?.tanggal, activeLetterTab]);
 
   const filteredRiwayatKode = useMemo(() => {
     const rawInput = activeLetter?.kode_surat?.trim().toLowerCase() || '';
